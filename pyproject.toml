@@ -1,0 +1,19 @@
+[project]
+name = "aiops-oj-platform"
+version = "0.1.0"
+description = "Small Python/SQLite platform for AIOps prompt and skill evaluation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "AIOps OJ contributors" }]
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/example/aiops-oj-platform#readme"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

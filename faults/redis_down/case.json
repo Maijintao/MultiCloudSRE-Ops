@@ -1,0 +1,11 @@
+{
+  "id": "redis_down",
+  "title": "Redis 队列服务不可用",
+  "inject_script": "./faults/redis_down/inject.sh",
+  "recover_script": "./faults/redis_down/recover.sh",
+  "fault_phenomenon": "投票页面可以打开，但用户点击投票后结果页统计长时间没有变化，表现为投票似乎没有生效。",
+  "public_case_info": "This demo case targets a local or private Example Voting App deployment. Observable entries are the vote service at http://localhost:8080/ and the result service at http://localhost:8081/. Use the configured read-only operations tools to inspect service status, container status, logs, and end-to-end behavior.",
+  "submission_enabled": true,
+  "ai_analysis_visible": true,
+  "order_id": 2
+}

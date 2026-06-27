@@ -1,0 +1,71 @@
+{
+  "fault_info": {
+    "root_cause": "worker容器未运行，导致Redis队列中的投票消息无人消费，无法写入Postgres，最终result页面数据不更新。",
+    "faulty_clouds": [
+      "local"
+    ],
+    "affected_clouds": [
+      "local"
+    ],
+    "fault_location": {
+      "module": "worker",
+      "file_path": null,
+      "function_or_config": "docker-compose.yml:worker",
+      "description": "worker负责从Redis队列消费投票消息并写入数据库，worker停止会让投票入口和结果展示之间的消费链路中断。"
+    }
+  },
+  "reasoning_process": {
+    "observed_symptoms": [
+      "vote页面可以访问，提交投票看起来成功。",
+      "result页面也可以访问，但统计数据一直不变化。",
+      "worker服务未运行，或者worker日志表现为缺失、异常退出或消费链路中断。"
+    ],
+    "key_evidence": [
+      {
+        "source": "docker compose ps worker redis db",
+        "content": "worker服务未处于运行状态，而redis和db仍然可能保持正常。",
+        "conclusion": "故障点在worker服务本身，而不是队列或数据库首先失效。"
+      },
+      {
+        "source": "业务现象与worker日志/状态",
+        "content": "投票入口与结果页都能打开，但提交后数据不更新，且worker没有正常消费行为。",
+        "conclusion": "投票消息没有被worker写入数据库。"
+      }
+    ],
+    "causal_chain": [
+      "worker容器未运行。",
+      "Redis中的投票消息无人消费。",
+      "Postgres统计数据不更新。",
+      "result页面数据始终不变化。"
+    ]
+  },
+  "verification_method": {
+    "verification_commands": [
+      {
+        "cmd": "docker compose ps worker redis db",
+        "purpose": "检查worker及其上下游依赖服务的运行状态。",
+        "expected_result": "worker、redis和db都处于Up状态。"
+      },
+      {
+        "cmd": "docker logs worker --tail 50",
+        "purpose": "确认worker是否已经恢复正常消费消息。",
+        "expected_result": "worker日志中不再出现异常退出，并且能看到正常消费或处理消息的行为。"
+      }
+    ],
+    "success_criteria": [
+      "worker容器恢复运行。",
+      "worker恢复消费Redis中的投票消息。",
+      "重新提交投票后result页面数据更新。"
+    ]
+  },
+  "proposed_resolution": {
+    "suggestion": "恢复worker服务，使Redis到Postgres的消费写入链路重新工作。",
+    "fix_steps": [
+      "执行 docker compose up -d worker 启动worker容器。",
+      "执行 docker compose ps worker redis db，确认worker服务已经恢复运行。",
+      "查看worker日志，确认worker能够正常消费消息。",
+      "重新提交一次投票，并检查result页面是否更新。"
+    ]
+  },
+  "confidence": 0.92
+}

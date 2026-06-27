@@ -1,0 +1,111 @@
+{
+  "positive_points_total": 104,
+  "negative_points_total": -50,
+  "rubrics": [
+    {
+      "criterion": "准确指出根因是redis容器未运行、停止或退出，导致投票链路中断",
+      "points": 10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障发生在local demo environment，或说明该demo不依赖真实公有云厂商",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障位置在redis服务，而不是vote、worker、result或db服务本身",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "说明vote页面可以访问，但提交投票后result页面数据不更新",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用docker compose ps、docker ps或同类容器状态检查作为证据，指出redis未运行",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用worker日志作为证据，指出worker出现连接redis失败、等待redis或无法消费消息的现象",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "说明redis是vote和worker之间的队列组件，vote依赖redis写入投票数据，worker依赖redis消费投票数据",
+      "points": 8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "给出正确因果链：redis未运行 -> vote无法写入队列 -> worker无法消费 -> 数据库不更新 -> result页面不变化",
+      "points": 10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "能区分页面可访问和业务链路正常不是一回事，没有因为页面能打开就判断系统正常",
+      "points": 6,
+      "tags": ["level:cluster", "cluster:misleading_signal_awareness", "axis:context_awareness"]
+    },
+    {
+      "criterion": "给出合理验证命令，并说明每条命令验证什么",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出合理修复方案，例如启动redis并重启或检查依赖它的vote和worker服务",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出修复后的成功标准，例如redis恢复运行、worker恢复消费、result页面更新",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "建议增加restart policy、健康检查、监控告警或自动拉起机制，避免redis停止后长期不可用",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "回答结构清晰，能分清结论、证据、因果链、验证方法和修复建议",
+      "points": 5,
+      "tags": ["level:example", "axis:communication_quality"]
+    },
+    {
+      "criterion": "按题目要求输出结构化结果，包含root_cause、faulty_clouds、affected_clouds、fault_location、key_evidence、causal_chain、verification_commands、fix_steps等字段",
+      "points": 6,
+      "tags": ["level:example", "axis:instruction_following"]
+    },
+    {
+      "criterion": "错误地将根因判断为db或Postgres故障，而没有指出redis未运行",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "错误地将根因判断为result前端页面、浏览器缓存或页面刷新问题",
+      "points": -8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "声称所有服务正常或不存在故障，明显与redis未运行及worker连接异常证据冲突",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "忽略redis未运行这一关键证据，只给出泛泛而谈的网络、权限或资源不足原因",
+      "points": -7,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "建议重装系统、删除数据库数据等破坏性操作，且没有必要性说明",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "编造不存在的命令结果、日志内容或云厂商告警作为证据",
+      "points": -5,
+      "tags": ["level:example", "axis:accuracy"]
+    }
+  ]
+}

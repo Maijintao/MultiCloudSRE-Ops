@@ -1,0 +1,191 @@
+{
+  "title": "AIOps OJ Platform",
+  "subtitle": "Prompt, skill, and operations-diagnosis evaluation for AIOps demos",
+  "overview": "Each case publishes only the user-visible incident description and public environment notes. A contestant submits a prompt and optional skills, the platform runs the agent in an isolated Hermes environment, then an OpenAI-compatible grading endpoint scores the final JSON answer against the case's private demo answer and public rubric.",
+  "announcement": "This open-source build ships with a small sanitized Example Voting App demo set. Private competitions should keep real cases, credentials, and hidden answers outside the public repository.",
+  "test_flow": [
+    "The background worker claims one queued submission at a time.",
+    "The configured case injection script is executed when present.",
+    "Hermes receives an isolated run home, workspace, prompt, model configuration, and optional submitted skills.",
+    "The agent may use terminal tools and any explicitly configured read-only MCP servers.",
+    "The recovery script is executed after the answer run when present.",
+    "The final answer and compact process transcript are sent to an OpenAI-compatible grading endpoint."
+  ],
+  "test_sets": [
+    {
+      "id": "test-set-1",
+      "name": "Demo Set",
+      "order_id": 1,
+      "submission_enabled": true
+    }
+  ],
+  "next_test_set_number": 2,
+  "agent_output_requirements": {
+    "object_name": "diagnosis_result",
+    "description": "Final structured diagnosis for one operations incident.",
+    "output_type": "json_object",
+    "output_constraints": [
+      "Return exactly one valid JSON object.",
+      "Do not wrap the answer in Markdown fences.",
+      "Include every required field.",
+      "Use unknown or null when a field cannot be determined."
+    ],
+    "fields": {
+      "fault_info": {
+        "type": "object",
+        "required": true,
+        "fields": {
+          "root_cause": {
+            "type": "string",
+            "required": true
+          },
+          "faulty_cloud": {
+            "type": "string",
+            "required": true,
+            "allowed_values": [
+              "local",
+              "aliyun",
+              "tencent",
+              "aws",
+              "azure",
+              "gcp",
+              "huawei",
+              "volcengine",
+              "baidu",
+              "unknown"
+            ]
+          },
+          "affected_clouds": {
+            "type": "array<string>",
+            "required": true,
+            "min_items": 1
+          },
+          "fault_location": {
+            "type": "object",
+            "required": true,
+            "fields": {
+              "module": {
+                "type": "string",
+                "required": true
+              },
+              "file_path": {
+                "type": "string | null",
+                "required": true
+              },
+              "function_or_config": {
+                "type": "string | null",
+                "required": true
+              },
+              "description": {
+                "type": "string",
+                "required": true
+              }
+            }
+          }
+        }
+      },
+      "reasoning_process": {
+        "type": "object",
+        "required": true,
+        "fields": {
+          "observed_symptoms": {
+            "type": "array<string>",
+            "required": true,
+            "min_items": 1
+          },
+          "key_evidence": {
+            "type": "array<object>",
+            "required": true,
+            "min_items": 1
+          },
+          "causal_chain": {
+            "type": "array<string>",
+            "required": true,
+            "min_items": 1
+          }
+        }
+      },
+      "verification_method": {
+        "type": "object",
+        "required": true,
+        "fields": {
+          "verification_commands": {
+            "type": "array<object>",
+            "required": true,
+            "min_items": 1
+          },
+          "success_criteria": {
+            "type": "array<string>",
+            "required": true,
+            "min_items": 1
+          }
+        }
+      },
+      "proposed_resolution": {
+        "type": "object",
+        "required": true,
+        "fields": {
+          "suggestion": {
+            "type": "string",
+            "required": true
+          },
+          "fix_steps": {
+            "type": "array<string>",
+            "required": true,
+            "min_items": 1
+          }
+        }
+      },
+      "confidence": {
+        "type": "number",
+        "required": true,
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  },
+  "tool_call_policy": {
+    "definition": "A tool call is any command, API request, log read, status check, or page probe used to gather diagnostic evidence.",
+    "expectation": "Use enough tools to establish symptoms, evidence, root cause, and recovery verification. Avoid repeated calls that add no new information.",
+    "scoring": "Public scoring considers correctness, evidence quality, verification, repair advice, process efficiency, and JSON format compliance."
+  },
+  "public_scoring_rubric": {
+    "total": 100,
+    "dimensions": [
+      {
+        "name": "Root cause accuracy",
+        "score": 32
+      },
+      {
+        "name": "Evidence and causal reasoning",
+        "score": 18
+      },
+      {
+        "name": "Verification method",
+        "score": 12
+      },
+      {
+        "name": "Resolution quality",
+        "score": 12
+      },
+      {
+        "name": "Diagnostic process efficiency",
+        "score": 14
+      },
+      {
+        "name": "Output format compliance",
+        "score": 7
+      },
+      {
+        "name": "Case-specific rubric points",
+        "score": 5
+      }
+    ],
+    "caps": [
+      "If the answer contains no useful diagnosis, the total score is capped at 10.",
+      "If the root cause is clearly wrong, the total score is capped at 70.",
+      "If the answer invents evidence, the total score is capped at 70.",
+      "If the repair advice is destructive or unsafe without justification, the total score is capped at 20."
+    ]
+  }
+}

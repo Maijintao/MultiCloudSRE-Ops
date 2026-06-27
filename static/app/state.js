@@ -1,0 +1,64 @@
+(function () {
+  const OJApp = window.OJApp || (window.OJApp = {});
+const state = {
+  token: localStorage.getItem("oj_token") || "",
+  savedUsername: localStorage.getItem("oj_saved_username") || "",
+  user: null,
+  config: null,
+  profile: null,
+  cases: [],
+  casesLoadedAt: 0,
+  casesLoadingPromise: null,
+  testSets: [],
+  testSetsLoadedAt: 0,
+  testSetsLoadingPromise: null,
+  leaderboard: [],
+  leaderboardCaseCount: 0,
+  testSetLeaderboardCaseCount: 0,
+  leaderboardLoadedAt: 0,
+  leaderboardLoadingPromise: null,
+  submissions: [],
+  submissionsTotal: 0,
+  submissionsTotalPages: 1,
+  submissionsLoadedAt: 0,
+  submissionsLoadingPromise: null,
+  submissionsRequestId: 0,
+  submissionTestSetFilters: [],
+  caseView: {
+    page: 1,
+    perPage: 20,
+  },
+  submissionView: {
+    username: "",
+    caseId: "",
+    displayCaseName: "",
+    sortBy: "created_at",
+    sortOrder: "desc",
+    page: 1,
+    perPage: 20,
+  },
+  adminView: {
+    tab: "cases",
+    caseQuery: "",
+    casePage: 1,
+    casePerPage: 10,
+    users: [],
+    usersLoadedAt: 0,
+    usersLoadingPromise: null,
+    usersError: "",
+    agentStatus: null,
+    agentLoadedAt: 0,
+    agentLoadingPromise: null,
+    agentError: "",
+  },
+  detailStreamAbort: null,
+  detailElapsedTimer: null,
+  detailElapsedItem: null,
+  route: { name: "overview", params: {} },
+  sidebarScrollTop: 0,
+};
+
+const app = document.getElementById("app");
+  OJApp.state = state;
+  OJApp.app = app;
+})();

@@ -1,0 +1,23 @@
+[Unit]
+Description=AIOps OJ Platform
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/oj-platform
+EnvironmentFile=-/etc/oj-platform.env
+Environment=PORT=8090
+Environment=OJ_ENV=production
+Environment=HERMES_BIN=hermes
+Environment=OJ_HERMES_DOCKER=1
+Environment=OJ_HERMES_DOCKER_IMAGE=hermes-agent:latest
+Environment=OJ_DB_FILE=/opt/oj-platform/state/oj.sqlite3
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /opt/oj-platform/server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

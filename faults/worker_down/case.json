@@ -1,0 +1,11 @@
+{
+  "id": "worker_down",
+  "title": "Worker 消费服务停止",
+  "inject_script": "./faults/worker_down/inject.sh",
+  "recover_script": "./faults/worker_down/recover.sh",
+  "fault_phenomenon": "投票页面提交看起来成功，结果页面也可以打开，但投票统计一直不变化。",
+  "public_case_info": "This demo case targets a local or private Example Voting App deployment. Observable entries are the vote service at http://localhost:8080/ and the result service at http://localhost:8081/. Use the configured read-only operations tools to inspect service status, container status, logs, and end-to-end behavior.",
+  "submission_enabled": true,
+  "ai_analysis_visible": true,
+  "order_id": 5
+}

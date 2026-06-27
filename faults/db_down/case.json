@@ -1,0 +1,11 @@
+{
+  "id": "db_down",
+  "title": "Postgres 数据库不可用",
+  "inject_script": "./faults/db_down/inject.sh",
+  "recover_script": "./faults/db_down/recover.sh",
+  "fault_phenomenon": "结果页访问异常或统计数据不可用，投票后结果也不更新。",
+  "public_case_info": "This demo case targets a local or private Example Voting App deployment. Observable entries are the vote service at http://localhost:8080/ and the result service at http://localhost:8081/. Use the configured read-only operations tools to inspect service status, container status, logs, and end-to-end behavior.",
+  "order_id": 1,
+  "submission_enabled": true,
+  "ai_analysis_visible": true
+}

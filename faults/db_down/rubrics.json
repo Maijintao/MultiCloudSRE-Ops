@@ -1,0 +1,111 @@
+{
+  "positive_points_total": 104,
+  "negative_points_total": -50,
+  "rubrics": [
+    {
+      "criterion": "准确指出根因是Postgres数据库容器停止、不健康或不可用",
+      "points": 10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障发生在local demo environment，或说明该demo不依赖真实公有云厂商",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障位置在db服务，而不是worker、result或vote服务本身",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "说明result页面访问异常或统计数据不可用，并且重新投票后结果仍不更新",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用docker compose ps、docker ps或同类容器状态检查作为证据，指出db未正常运行",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用worker或result日志作为证据，指出数据库连接失败、查询失败或写入失败",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "说明db同时是worker写入投票结果和result读取统计数据的共同依赖",
+      "points": 8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "给出正确因果链：db不可用 -> worker无法写库 -> result无法读库 -> 结果页异常或统计不更新",
+      "points": 10,
+      "tags": ["level:cluster", "cluster:evidence_based_root_cause_tracing", "axis:accuracy"]
+    },
+    {
+      "criterion": "能区分结果页访问异常和根因定位，不会只停留在页面现象层面",
+      "points": 6,
+      "tags": ["level:cluster", "cluster:misleading_signal_awareness", "axis:context_awareness"]
+    },
+    {
+      "criterion": "给出合理验证命令，并说明每条命令验证什么",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出合理修复方案，例如启动db并重启或检查依赖它的worker和result服务",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出修复后的成功标准，例如db恢复运行、读写恢复、结果页统计恢复",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "建议增加数据库健康检查、备份监控、告警或自动拉起机制，避免db异常后长时间不可用",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "回答结构清晰，能分清结论、证据、因果链、验证方法和修复建议",
+      "points": 5,
+      "tags": ["level:example", "axis:communication_quality"]
+    },
+    {
+      "criterion": "按题目要求输出结构化结果，包含root_cause、faulty_clouds、affected_clouds、fault_location、key_evidence、causal_chain、verification_commands、fix_steps等字段",
+      "points": 6,
+      "tags": ["level:example", "axis:instruction_following"]
+    },
+    {
+      "criterion": "错误地将根因判断为redis、worker或前端页面问题，而没有指出db不可用",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "错误地将根因判断为仅仅是result页面前端渲染问题或浏览器缓存问题",
+      "points": -8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "声称所有服务正常或不存在故障，明显与db异常及依赖链路证据冲突",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "忽略db不可用这一关键证据，只给出泛泛而谈的网络、权限或资源不足原因",
+      "points": -7,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "建议重置数据库、删除数据或其他破坏性操作，且没有必要性说明",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "编造不存在的命令结果、日志内容或云厂商告警作为证据",
+      "points": -5,
+      "tags": ["level:example", "axis:accuracy"]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: shippingservice
+  name: shippingservice
+  namespace: seat-1
+spec:
+  ports:
+  - port: 50051
+    protocol: TCP
+    targetPort: 50051
+  selector:
+    app: shippingservice
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: shippingservice
+  name: shippingservice-external
+  namespace: seat-1
+spec:
+  ports:
+  - nodePort: 30051
+    port: 50051
+    protocol: TCP
+    targetPort: 50051
+  selector:
+    app: shippingservice
+  type: NodePort

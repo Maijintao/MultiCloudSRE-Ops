@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-rum-proxy
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-rum-proxy
+  template:
+    metadata:
+      labels:
+        app: frontend-rum-proxy
+    spec:
+      containers:
+      - env:
+        - name: PUBLIC_FRONTEND_ORIGIN
+          value: "http://__ALIYUN_IP__:31366"
+        - name: GATEWAY_API_BASE
+          value: "http://__ALIYUN_IP__:31366"
+        image: nginx:1.24-alpine
+        imagePullPolicy: IfNotPresent
+        name: nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d
+          name: nginx-config
+      volumes:
+      - configMap:
+          name: rum-nginx-config
+        name: nginx-config

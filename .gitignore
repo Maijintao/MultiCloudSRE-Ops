@@ -1,0 +1,7 @@
+config.env
+rendered/
+kubeconfigs/generated/*.kubeconfig
+*.tar
+*.tar.gz
+*.img
+.DS_Store

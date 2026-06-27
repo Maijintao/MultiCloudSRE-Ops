@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: productcatalogservice
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: productcatalogservice
+  template:
+    metadata:
+      labels:
+        app: productcatalogservice
+    spec:
+      containers:
+      - env:
+        - name: CATALOG_ASSET_ROUTES
+          value: catalog-asset-routes
+        - name: PRODUCT_IMAGE_PREFIX
+          value: /assets/products/2026/
+        image: productcatalog-apm-direct:20260528-v2
+        imagePullPolicy: Never
+        name: server
+        ports:
+        - containerPort: 3550
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi

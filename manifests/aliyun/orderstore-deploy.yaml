@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: new-orderstore
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: new-orderstore
+  template:
+    metadata:
+      labels:
+        app: new-orderstore
+    spec:
+      containers:
+      - env:
+        - name: DB_HOST
+          value: mysql-orders
+        - name: DB_PORT
+          value: "3306"
+        - name: DB_USER
+          value: root
+        - name: DB_PASSWORD
+          value: "sztu172712"
+        - name: DB_NAME
+          value: ordersdb
+        - name: PORT
+          value: "5080"
+        image: new-orderstore:v1.0
+        imagePullPolicy: Never
+        name: server
+        ports:
+        - containerPort: 5080
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi

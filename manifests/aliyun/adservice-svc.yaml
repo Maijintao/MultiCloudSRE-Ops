@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: adservice
+  name: adservice
+  namespace: seat-1
+spec:
+  ports:
+  - port: 9555
+    protocol: TCP
+    targetPort: 9555
+  selector:
+    app: adservice
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: adservice
+  name: adservice-external
+  namespace: seat-1
+spec:
+  ports:
+  - nodePort: 32366
+    port: 9555
+    protocol: TCP
+    targetPort: 9555
+  selector:
+    app: adservice
+  type: NodePort

@@ -1,0 +1,19 @@
+# Chaos Mesh Helm Values — k3s + containerd 适配
+# 用法: helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --create-namespace -f values.yaml
+
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/k3s/containerd/containerd.sock
+
+dashboard:
+  create: true
+  service:
+    type: NodePort
+    nodePort: 2333
+
+controllerManager:
+  replicaCount: 1
+
+dnsServer:
+  create: true
+  replicaCount: 1

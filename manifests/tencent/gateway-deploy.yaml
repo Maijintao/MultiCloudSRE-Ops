@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: new-gatewayservice
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: new-gatewayservice
+  template:
+    metadata:
+      labels:
+        app: new-gatewayservice
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "5075"
+        - name: ORDER_SERVICE_ADDR
+          value: "__AWS_IP__:30070"
+        - name: RISK_CONTROL_SERVICE_ADDR
+          value: "__AWS_IP__:30071"
+        - name: NOTIFICATION_SERVICE_ADDR
+          value: "__AWS_IP__:30072"
+        - name: CURRENCY_SERVICE_ADDR
+          value: currencyservice:7000
+        - name: CORS_POLICY_CONFIG
+          value: gateway-cors-policy
+        - name: EXPECTED_PUBLIC_ORIGIN
+          value: https://shop-next.example.com
+        - name: ASSET_PROXY_BASE
+          value: http://asset-proxy.seat-1.svc.cluster.local
+        image: docker.io/library/new-gatewayservice:v1.0-amd64
+        imagePullPolicy: Never
+        name: new-gatewayservice
+        ports:
+        - containerPort: 5075
+          protocol: TCP

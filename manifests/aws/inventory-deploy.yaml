@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: new-inventoryservice
+  name: new-inventoryservice
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: new-inventoryservice
+  template:
+    metadata:
+      labels:
+        app: new-inventoryservice
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "5073"
+        - name: RISK_CONTROL_SERVICE_ADDR
+          value: new-riskcontrolservice:5071
+        - name: SHIPPING_SERVICE_ADDR
+          value: "__ALIYUN_IP__:30051"
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "__TENCENT_IP__:30008"
+        image: docker.io/library/new-inventoryservice:v1.0
+        imagePullPolicy: Never
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 5073
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: server
+        ports:
+        - containerPort: 5073
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 5073
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi

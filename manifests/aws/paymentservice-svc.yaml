@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: paymentservice
+  name: paymentservice
+  namespace: seat-1
+spec:
+  ports:
+  - name: grpc
+    nodePort: 30051
+    port: 50051
+    protocol: TCP
+    targetPort: 50051
+  selector:
+    app: paymentservice
+  type: NodePort

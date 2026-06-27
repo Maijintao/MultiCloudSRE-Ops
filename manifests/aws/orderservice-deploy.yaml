@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: new-orderservice
+  name: new-orderservice
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: new-orderservice
+  template:
+    metadata:
+      labels:
+        app: new-orderservice
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "5070"
+        - name: INVENTORY_SERVICE_ADDR
+          value: new-inventoryservice:5073
+        - name: RISK_CONTROL_SERVICE_ADDR
+          value: new-riskcontrolservice:5071
+        - name: NOTIFICATION_SERVICE_ADDR
+          value: new-notificationservice:5072
+        - name: CART_SERVICE_ADDR
+          value: "__TENCENT_IP__:30007"
+        - name: PAYMENT_SERVICE_ADDR
+          value: paymentservice:50051
+        image: docker.io/library/new-orderservice:v1.1
+        imagePullPolicy: Never
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 5070
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: server
+        ports:
+        - containerPort: 5070
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 5070
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi

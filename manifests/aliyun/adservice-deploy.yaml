@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: adservice
+  name: adservice
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adservice
+  template:
+    metadata:
+      labels:
+        app: adservice
+    spec:
+      containers:
+      - image: registry.k8s.io/adservice:v0.10.5
+        imagePullPolicy: IfNotPresent
+        name: adservice
+        ports:
+        - containerPort: 9555
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+          requests:
+            cpu: 50m

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: seat-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "8080"
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "__TENCENT_IP__:30008"
+        - name: CURRENCY_SERVICE_ADDR
+          value: "__TENCENT_IP__:30009"
+        - name: CART_SERVICE_ADDR
+          value: "__TENCENT_IP__:30007"
+        - name: AD_SERVICE_ADDR
+          value: "__ALIYUN_IP__:32366"
+        - name: EMAIL_SERVICE_ADDR
+          value: "__TENCENT_IP__:30010"
+        - name: SHOPPING_ASSISTANT_SERVICE_ADDR
+          value: "__TENCENT_IP__:30010"
+        - name: USER_BEHAVIOR_SERVICE_ADDR
+          value: "__AWS_IP__:30074"
+        - name: RECOMMENDATION_SERVICE_ADDR
+          value: recommendationservice:8080
+        - name: SHIPPING_SERVICE_ADDR
+          value: shippingservice:50051
+        - name: CHECKOUT_SERVICE_ADDR
+          value: checkoutservice:5050
+        - name: ENABLE_PROFILER
+          value: "0"
+        image: frontend-apm-direct:20260528
+        imagePullPolicy: Never
+        name: server
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000

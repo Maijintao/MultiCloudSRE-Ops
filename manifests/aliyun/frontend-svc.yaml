@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: frontend
+  name: frontend
+  namespace: seat-1
+spec:
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: frontend
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: frontend
+  name: frontend-nodeport
+  namespace: seat-1
+spec:
+  ports:
+  - nodePort: 31366
+    port: 8080
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: frontend-rum-proxy
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-rum
+  namespace: seat-1
+spec:
+  ports:
+  - nodePort: 31380
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: frontend-rum-proxy
+  type: NodePort

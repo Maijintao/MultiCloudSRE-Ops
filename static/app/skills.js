@@ -1,6 +1,7 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state, escapeHtml, showNotice, api } = OJApp;
+import { api } from "./api.js";
+import { showNotice } from "./notice.js";
+import { state } from "./state.js";
+import { escapeHtml } from "./utils.js";
 
   function currentSkills(profile = state.profile) {
     return normalizeSkillList(Array.isArray(profile?.skills) ? profile.skills : []);
@@ -439,11 +440,10 @@
     };
   }
 
-  Object.assign(OJApp, {
-    currentSkills,
-    nextSkillName,
-    formatBytes,
-    renderSkillManagerSection,
-    bindSkillManager,
-  });
-})();
+export {
+  currentSkills,
+  nextSkillName,
+  formatBytes,
+  renderSkillManagerSection,
+  bindSkillManager,
+};

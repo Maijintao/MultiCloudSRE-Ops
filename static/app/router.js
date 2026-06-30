@@ -1,9 +1,9 @@
-(function () {
-  const OJApp = window.OJApp;
+import { emit } from "./events.js";
+import { state } from "./state.js";
 
   function captureSidebarScroll() {
     const sidebar = document.querySelector(".sidebar");
-    if (sidebar) OJApp.state.sidebarScrollTop = sidebar.scrollTop;
+    if (sidebar) state.sidebarScrollTop = sidebar.scrollTop;
   }
 
   function routeTo(path) {
@@ -11,8 +11,8 @@
     captureSidebarScroll();
     const next = `#${path}`;
     if (window.location.hash === next) {
-      OJApp.state.route = parseRoute();
-      OJApp.renderShell?.();
+      state.route = parseRoute();
+      emit("shell:render");
       return;
     }
     window.location.hash = next;
@@ -36,5 +36,4 @@ function parseRoute() {
   if (parts[0] === "admin") return { name: "admin", params: {} };
   return { name: "overview", params: {} };
 }
-  Object.assign(OJApp, { captureSidebarScroll, routeTo, parseRoute });
-})();
+export { captureSidebarScroll, routeTo, parseRoute };

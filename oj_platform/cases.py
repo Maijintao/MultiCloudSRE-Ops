@@ -325,8 +325,6 @@ def validate_rubrics(case_dir, rubrics):
         raise ValueError(f"negative_points_total must be an integer in {case_dir}")
     if positive_total < 80 or positive_total > 120:
         raise ValueError(f"positive_points_total must be between 80 and 120 in {case_dir}")
-    if negative_total > -40 or negative_total < -60:
-        raise ValueError(f"negative_points_total must be between -60 and -40 in {case_dir}")
     items = rubrics.get("rubrics")
     if not isinstance(items, list) or not items:
         raise ValueError(f"rubrics must be a non-empty array in {case_dir}")
@@ -433,11 +431,16 @@ def normalize_test_sets(config):
             f"test_sets[{index}].submission_enabled",
             True,
         )
+        mcp_servers = normalize_selected_public_mcp_servers(
+            raw_item.get("mcp_servers"),
+            default_to_all=True,
+        )
         items.append({
             "id": test_set_id,
             "name": name,
             "order_id": order_id,
             "submission_enabled": submission_enabled,
+            "mcp_servers": mcp_servers,
         })
     return sorted(items, key=lambda item: (item["order_id"], item["id"]))
 
@@ -513,6 +516,7 @@ def create_next_test_set():
             "name": f"测试集{next_number}",
             "order_id": order_id,
             "submission_enabled": False,
+            "mcp_servers": normalize_selected_public_mcp_servers(None, default_to_all=True),
         }
         config["test_sets"] = [*test_sets, test_set]
         config["next_test_set_number"] = next_number + 1
@@ -538,6 +542,30 @@ def update_test_set_flags(test_set_id, payload):
                 "submission_enabled",
                 True,
             )
+            updated = item
+            break
+        if not updated:
+            raise LookupError("test set not found")
+        config["test_sets"] = test_sets
+        write_json_object(settings.CONFIG_FILE, config)
+        return {"test_set": test_set_by_id(test_set_id), "test_sets": public_test_sets()}
+
+
+def update_test_set_mcp_servers(test_set_id, payload):
+    if not isinstance(payload, dict):
+        raise ValueError("test set mcp payload must be an object")
+    if "mcp_servers" not in payload:
+        raise ValueError("mcp_servers is required")
+    test_set_id = validate_case_set_id(test_set_id, "test set id")
+    mcp_servers = normalize_selected_public_mcp_servers(payload.get("mcp_servers"), default_to_all=False)
+    with _TEST_SET_LOCK:
+        config = load_config()
+        test_sets = normalize_test_sets(config)
+        updated = None
+        for item in test_sets:
+            if item["id"] != test_set_id:
+                continue
+            item["mcp_servers"] = mcp_servers
             updated = item
             break
         if not updated:
@@ -980,12 +1008,14 @@ def update_case_files(case_id, payload):
         fallback_order_id=current_case.get("order_id"),
         fallback_case_set_id=current_case.get("case_set_id") or TRAINING_CASE_SET_ID,
     )
+    order_changed = case_json.get("order_id") != current_case.get("order_id")
     ideal_answer = validate_ideal_answer(paths["dir"], parse_editor_json(raw_ideal_answer, "ideal-answer.json"))
     rubrics = validate_rubrics(paths["dir"], parse_editor_json(raw_rubrics, "rubrics.json"))
     with _TEST_SET_LOCK:
         case_json["case_set_id"] = validate_configured_case_set_id(case_json.get("case_set_id"))
         write_case_bundle(case_id, case_json, raw_inject_script, raw_recover_script, ideal_answer, rubrics)
-        renumber_case_orders()
+        if order_changed:
+            renumber_case_orders()
     return admin_case_files(case_id)
 
 

@@ -1,8 +1,7 @@
-(function () {
-  const OJApp = window.OJApp;
+import { escapeHtml } from "./utils.js";
 
-  const DEFAULT_NOTICE_DURATION = 4000;
-  let noticeSeed = 0;
+const DEFAULT_NOTICE_DURATION = 4000;
+let noticeSeed = 0;
 
   function noticeHost() {
     let host = document.getElementById("notice");
@@ -24,7 +23,7 @@
     }, 180);
   }
 
-  function showNotice(message, type = "info", duration = DEFAULT_NOTICE_DURATION) {
+function showNotice(message, type = "info", duration = DEFAULT_NOTICE_DURATION) {
     const text = String(message || "").trim();
     if (!text) return;
     const host = noticeHost();
@@ -32,7 +31,7 @@
     card.className = `notice ${type}`;
     card.dataset.noticeId = `notice-${Date.now()}-${noticeSeed += 1}`;
     card.innerHTML = `
-      <div class="notice-body">${OJApp.escapeHtml(text)}</div>
+      <div class="notice-body">${escapeHtml(text)}</div>
       <button type="button" class="notice-close" aria-label="关闭提示">×</button>
     `;
     const closeButton = card.querySelector(".notice-close");
@@ -43,5 +42,4 @@
     }
   }
 
-  OJApp.showNotice = showNotice;
-})();
+export { showNotice };

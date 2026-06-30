@@ -1,5 +1,3 @@
-(function () {
-  const OJApp = window.OJApp;
 async function storeLoginCredential(username, password) {
   if (!username || !password || !window.PasswordCredential || !navigator.credentials) return;
   try {
@@ -22,5 +20,5 @@ async function prefillLoginCredential() {
     // Ignore unsupported or denied credential access.
   }
 }
-  Object.assign(OJApp, { storeLoginCredential, prefillLoginCredential });
-})();
+
+export { storeLoginCredential, prefillLoginCredential };

@@ -1,6 +1,5 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state } = OJApp;
+import { state } from "./state.js";
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -350,33 +349,33 @@ function processOutputText(item) {
 function formatLogLineTime(line) {
   return String(line || "").replace(/^\[([^\]]+)\]/, (_, rawTime) => `[${compactTime(rawTime)}]`);
 }
-  Object.assign(OJApp, {
-    escapeHtml,
-    formatBeijingTime,
-    compactTime,
-    parseTimeValue,
-    formatDurationMs,
-    submissionDurationText,
-    submissionDraftKey,
-    normalizeDraftSkillIds,
-    readSubmissionDraft,
-    writeSubmissionDraft,
-    clearSubmissionDraft,
-    syncSubmissionDraftSouls,
-    confirmTwice,
-    caseOrderText,
-    caseNavLabel,
-    statusText,
-    statusClass,
-    verdictText,
-    visibleSubmissions,
-    lineClass,
-    parseLiveLogLine,
-    splitLiveToolBody,
-    renderLiveEvent,
-    renderLogLines,
-    gradingResultText,
-    processOutputText,
-    formatLogLineTime,
-  });
-})();
+
+export {
+  escapeHtml,
+  formatBeijingTime,
+  compactTime,
+  parseTimeValue,
+  formatDurationMs,
+  submissionDurationText,
+  submissionDraftKey,
+  normalizeDraftSkillIds,
+  readSubmissionDraft,
+  writeSubmissionDraft,
+  clearSubmissionDraft,
+  syncSubmissionDraftSouls,
+  confirmTwice,
+  caseOrderText,
+  caseNavLabel,
+  statusText,
+  statusClass,
+  verdictText,
+  visibleSubmissions,
+  lineClass,
+  parseLiveLogLine,
+  splitLiveToolBody,
+  renderLiveEvent,
+  renderLogLines,
+  gradingResultText,
+  processOutputText,
+  formatLogLineTime,
+};

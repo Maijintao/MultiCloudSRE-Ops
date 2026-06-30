@@ -2884,6 +2884,37 @@ body,
   min-width: 0;
 }
 
+.admin-test-set-mcp-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-test-set-mcp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.admin-test-set-mcp-chip input {
+  width: auto;
+  margin: 0;
+}
+
+.admin-test-set-mcp-chip span {
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .admin-test-set-actions {
   flex: 0 0 auto;
   display: flex;

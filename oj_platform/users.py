@@ -1,6 +1,7 @@
 import unicodedata
 
 from . import db, settings
+from .grader_config import effective_platform_grader_config
 from .skills import (
     SKILL_NAME_PATTERN,
     build_uploaded_archive_skill,
@@ -80,16 +81,9 @@ def effective_model_profile(profile, include_secret=False):
 
 
 def effective_grader_profile(profile, include_secret=False):
-    configured = bool(settings.GRADER_BASE_URL and settings.GRADER_MODEL and settings.GRADER_API_KEY)
-    api_key_mask = mask_api_key(settings.GRADER_API_KEY) if configured else ""
-    return {
-        "source": GRADER_SOURCE_PLATFORM,
-        "configured": configured,
-        "api_base_url": settings.GRADER_BASE_URL,
-        "api_key": settings.GRADER_API_KEY if include_secret else "",
-        "api_key_mask": api_key_mask,
-        "model": settings.GRADER_MODEL,
-    }
+    profile = effective_platform_grader_config(include_secret=include_secret)
+    profile["source"] = GRADER_SOURCE_PLATFORM
+    return profile
 
 
 def public_user_profile(profile):

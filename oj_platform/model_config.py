@@ -3,6 +3,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from . import settings
+from .grader_config import save_platform_grader_config
 from .textutil import mask_api_key
 from .users import effective_grader_profile, get_user_profile, update_user_profile_fields
 
@@ -103,21 +104,39 @@ def update_user_profile(user, payload):
     return update_user_profile_fields(user["id"], fields)
 
 
-def grader_api_key_from_payload(payload, existing=None):
-    existing = existing or {}
-    api_key = str(payload.get("api_key", "") or payload.get("grader_api_key", "") or "").strip()
-    return api_key or str(existing.get("grader_api_key") or "").strip()
-
-
 def check_grader_model_available(api_key):
-    platform_api_key = str(settings.GRADER_API_KEY or "").strip()
+    profile = effective_grader_profile({}, include_secret=True)
+    platform_api_key = str(api_key or profile.get("api_key") or "").strip()
     if not platform_api_key:
         raise ValueError("platform scoring API is not configured")
-    return check_model_available(settings.GRADER_BASE_URL, platform_api_key, settings.GRADER_MODEL)
+    return check_model_available(profile["api_base_url"], platform_api_key, profile["model"])
 
 
 def check_grader_profile_available(payload, existing=None):
-    return check_grader_model_available(None)
+    payload = payload or {}
+    existing = effective_grader_profile({}, include_secret=True)
+    base_url, api_key, model = model_check_fields(payload, existing)
+    return check_model_available(base_url, api_key, model)
+
+
+def validate_platform_grader_payload(payload):
+    existing = effective_grader_profile({}, include_secret=True)
+    submitted_key = str((payload or {}).get("api_key", "") or "").strip()
+    base_url, api_key, model = model_check_fields(payload or {}, existing)
+    return {
+        "api_base_url": base_url,
+        "api_key": submitted_key or api_key,
+        "api_key_mask": mask_api_key(submitted_key or api_key),
+        "model": model,
+    }
+
+
+def update_platform_grader_config(payload):
+    fields = validate_platform_grader_payload(payload)
+    check = check_model_available(fields["api_base_url"], fields["api_key"], fields["model"])
+    if not check.get("ok"):
+        raise ValueError(check.get("message") or "model is unavailable")
+    return save_platform_grader_config(fields)
 
 
 def public_grader_config(profile=None):
@@ -138,9 +157,14 @@ def update_user_grader_config(user, payload):
 
 
 def require_submission_grader_config(submission):
-    api_key = str(settings.GRADER_API_KEY or submission.get("grader_api_key") or "").strip()
-    base_url = str(settings.GRADER_BASE_URL or submission.get("grader_base_url") or "").strip().rstrip("/")
-    model = str(settings.GRADER_MODEL or submission.get("grader_model") or "").strip()
+    api_key = str(submission.get("grader_api_key") or "").strip()
+    base_url = str(submission.get("grader_base_url") or "").strip().rstrip("/")
+    model = str(submission.get("grader_model") or "").strip()
+    if not (api_key and base_url and model):
+        profile = effective_grader_profile({}, include_secret=True)
+        api_key = api_key or str(profile.get("api_key") or "").strip()
+        base_url = base_url or str(profile.get("api_base_url") or "").strip().rstrip("/")
+        model = model or str(profile.get("model") or "").strip()
     if not api_key:
         raise ValueError("platform scoring API is not configured")
     return {

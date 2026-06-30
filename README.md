@@ -1,68 +1,72 @@
 # AIOps OJ Platform
 
-AIOps OJ Platform is a small Python and SQLite evaluation platform for
-operations-diagnosis agents. It was built for prompt and skill experiments:
-contestants submit a prompt, model endpoint, API key, and optional skills; the
-platform runs an isolated Hermes answer attempt and sends the final structured
-answer to an OpenAI-compatible grading endpoint.
+AIOps OJ Platform 是一个轻量级的 AIOps 故障诊断评测平台，用 Python、
+SQLite 和原生浏览器前端实现。它适合做 Prompt、Skill、MCP 工具使用能力
+和运维诊断流程的实验评测。
 
-This public repository is the sanitized open-source edition. It contains the
-platform code and three local Example Voting App demo cases. Private competition
-cases, real cloud hosts, credentials, hidden answers, and run state should stay
-outside the public repository.
+平台的基本流程是：选手提交 Prompt、模型连接配置和可选 Skills；后台 worker
+为每次提交创建隔离运行环境，调用 Hermes 完成一次无人值守诊断；最后把结构化
+答案和过程摘要发送到 OpenAI-compatible 评分接口，由平台统一评分。
 
-## Features
+这个仓库是脱敏后的开源版本，只包含平台代码和少量公开 demo case。真实比赛题、
+云主机地址、凭据、隐藏答案、运行数据库和实验状态不应进入公开仓库。
 
-- Single-worker submission queue backed by SQLite.
-- Plain Python HTTP server and static frontend.
-- Per-submission Hermes run directory with optional Docker isolation.
-- Optional contestant skills mounted into `HERMES_HOME/skills`.
-- Case format with public `case.json`, private demo `ideal-answer.json`, rubric,
-  and optional `inject.sh` / `recover.sh` scripts.
-- Streaming submission details for logs, tool calls, answer output, and grading.
-- OpenAI-compatible model checks and grading requests.
+## 功能特性
 
-## Repository Layout
+- 基于 SQLite 的用户、提交、配置和评分状态存储。
+- 单后台 worker 顺序领取提交，避免多个故障注入任务互相干扰。
+- 每次提交独立生成 Hermes 运行目录，支持 Docker 隔离。
+- 支持选手提交文本 Skill 或 ZIP Skill 包。
+- 支持平台托管的评分 API 配置，管理员可以在界面中检查并保存评分接口。
+- 支持按题目或测试集选择可用 MCP 工具。
+- 提交详情页实时展示运行日志、工具调用、最终答案和评分结果。
+- 前端使用无依赖的原生 ES Modules，不需要打包器。
+
+## 目录结构
 
 ```text
-oj_platform/              Python backend modules
-static/                   Browser UI and generated static/app.js bundle
-static/app/               Frontend source modules
-faults/                   Sanitized demo cases
-runtime/                  Optional read-only MCP helper runtimes
-scripts/build-static-app.js
-tests/                    Unit and repository hygiene tests
-docs/                     Architecture, deployment, and case authoring notes
+oj_platform/              后端 Python 模块
+static/                   前端入口、样式和静态资源
+static/app/               原生 ES Module 前端源码
+faults/                   脱敏 demo case 和故障脚本
+runtime/                  可选的只读 MCP 辅助运行时
+scripts/check-frontend-modules.js
+tests/                    单元测试和开源卫生检查
+docs/                     架构、部署、题目格式和发布文档
 ```
 
-## Quick Start
+## 快速开始
 
-Use Python 3.10 or newer.
+需要 Python 3.10 或更新版本。
 
 ```bash
 cd aiops-platform
 python -m unittest discover -s tests -v
+node scripts/check-frontend-modules.js
 PORT=8090 python server.py
 ```
 
-Open `http://127.0.0.1:8090/`.
+然后打开：
 
-Development defaults are intentionally weak and are only for local use:
+```text
+http://127.0.0.1:8090/
+```
 
-- username: `admin`
-- password: `dev-admin-password`
-- invite code: `dev-invite-code`
+开发环境默认账号仅适合本机调试：
 
-Set `OJ_ENV=production` before exposing the service. Production mode requires
-explicit secrets and grader configuration.
+- 用户名：`admin`
+- 密码：`dev-admin-password`
+- 注册邀请码：`dev-invite-code`
 
-## Configuration
+如果要部署到公开网络或多人共享环境，必须设置 `OJ_ENV=production`，并显式配置
+管理员密码、注册邀请码、JWT secret 和评分 API。
 
-Copy `.env.example` into your deployment environment and fill in real values.
-The platform does not automatically load `.env`; use your shell, process
-manager, container runtime, or systemd `EnvironmentFile`.
+## 配置
 
-Required for production:
+复制 `.env.example` 到你的部署环境中，并通过 shell、systemd、容器运行时或进程
+管理器加载。平台不会自动读取 `.env` 文件。
+
+生产环境至少需要配置：
 
 - `OJ_ADMIN_PASSWORD`
 - `OJ_REGISTRATION_INVITE_CODE`
@@ -71,56 +75,66 @@ Required for production:
 - `OJ_GRADER_MODEL`
 - `OJ_GRADER_API_KEY`
 
-The grader endpoint must expose an OpenAI-compatible
-`/chat/completions` API. Contestant model endpoints are configured from user
-profiles.
+评分接口需要兼容 OpenAI 的 `/chat/completions` API。也可以在管理员界面中检查并
+保存平台评分 API，保存后的配置会写入数据库并优先于环境变量使用。
 
-## Frontend Build
+选手模型接口由用户在个人资料页配置，平台只保存脱敏后的 key 展示值，提交运行时
+会按当前配置生成快照。
 
-The checked-in `static/app.js` file is generated so the app can be served by the
-Python HTTP server without a frontend toolchain.
+## 前端开发
+
+前端直接使用浏览器原生 ES Modules：
+
+- 入口文件：`static/app/main.js`
+- 页面入口：`static/index.html`
+- 样式文件：`static/styles.css`
+
+修改前端后运行：
 
 ```bash
-node scripts/build-static-app.js
+node scripts/check-frontend-modules.js
 ```
 
-Edit files under `static/app/`, rebuild, and commit both the source change and
-the generated bundle.
+该脚本会检查 `static/index.html` 是否加载 `static/app/main.js`，并防止回退到旧的
+`static/app.js` bundle、全局 `window.OJApp` 注册表或内联事件属性。
 
 ## Demo Cases
 
-The public `faults/` directory contains only sanitized Example Voting App demos:
+公开仓库保留了三个带 `case.json` 的 Example Voting App 方向脱敏 demo：
 
 - `db_down`
 - `redis_down`
 - `worker_down`
 
-These are safe examples of the case shape. Do not commit private competition
-cases, real infrastructure addresses, credentials, or hidden answers.
+这些 case 用于展示题目结构和评分流程。真实比赛题、私有评分点、真实云环境地址、
+SSH key、kubeconfig、API key 和运行数据库都不要提交到公开仓库。
+
+`faults/` 下也可能包含只有 `inject.sh` / `recover.sh` 的脚本型实验材料。没有
+`case.json` 的目录不会被平台当作题目加载，只适合作为故障脚本参考或后续私有题目草稿。
 
 ## Docker Runtime
 
-The Hermes runtime image can be built with:
+Hermes 运行镜像可以这样构建：
 
 ```bash
 docker build -t hermes-agent:latest -f docker/hermes-runtime.Dockerfile .
 ```
 
-If you need an apt mirror, pass one explicitly:
+如需指定 apt 镜像源，可以显式传入：
 
 ```bash
 docker build --build-arg APT_MIRROR=https://mirror.example.org -t hermes-agent:latest -f docker/hermes-runtime.Dockerfile .
 ```
 
-## Documentation
+## 文档
 
-- [Architecture](docs/architecture.md)
-- [Case format](docs/case-format.md)
-- [Deployment](docs/deployment.md)
-- [Security](docs/security.md)
-- [Frontend build](docs/frontend-build.md)
-- [Public release](docs/release.md)
+- [架构说明](docs/architecture.md)
+- [题目格式](docs/case-format.md)
+- [部署说明](docs/deployment.md)
+- [安全说明](docs/security.md)
+- [前端模块说明](docs/frontend-build.md)
+- [发布说明](docs/release.md)
 
-## License
+## 许可证
 
 MIT

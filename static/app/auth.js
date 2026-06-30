@@ -1,24 +1,23 @@
-(function () {
-  const OJApp = window.OJApp;
-  const {
-    state,
-    app,
-    api,
-    escapeHtml,
-    setToken,
-    storeLoginCredential,
-    prefillLoginCredential,
-    closeDetailStream,
-    loadInitialData,
-    applyBootstrapResponse,
-    parseRoute,
-    renderShell,
-    showNotice,
-    maybeRefreshLeaderboard,
-  } = OJApp;
+import { api, setToken } from "./api.js";
+import { storeLoginCredential, prefillLoginCredential } from "./credentials.js";
+import {
+  applyBootstrapResponse,
+  applyCachedBootstrap,
+  clearBootstrapCache,
+  maybeRefreshLeaderboard,
+} from "./data.js";
+import { parseRoute } from "./router.js";
+import { renderShell } from "./shell.js";
+import { app, state } from "./state.js";
+import { closeDetailStream } from "./submissions.js";
+import { escapeHtml } from "./utils.js";
+
+let bootPromise = null;
+let hashListenerBound = false;
 function logout(render = true) {
   closeDetailStream();
   setToken("");
+  clearBootstrapCache();
   state.user = null;
   state.config = null;
   state.profile = null;
@@ -63,6 +62,21 @@ function logout(render = true) {
     agentError: "",
   };
   if (render) renderLogin();
+}
+
+function renderBootLoading() {
+  app.innerHTML = `
+    <main class="login-shell">
+      <section class="login-panel">
+        <div class="login-panel-head">
+          <span class="eyebrow">AIOps OJ</span>
+          <h2>正在加载平台</h2>
+          <p>正在恢复你的登录状态，题目和提交记录会在页面出现后继续刷新。</p>
+        </div>
+        <div class="empty">加载中...</div>
+      </section>
+    </main>
+  `;
 }
 
 function caseById(id) {
@@ -241,31 +255,41 @@ function renderRegister(message = "") {
 }
 
 async function boot() {
-  if (OJApp.bootPromise) return OJApp.bootPromise;
-  OJApp.bootPromise = (async () => {
-    if (!OJApp.hashListenerBound) {
+  if (bootPromise) return bootPromise;
+  bootPromise = (async () => {
+    if (!hashListenerBound) {
       window.addEventListener("hashchange", () => {
         if (!state.user) return;
         state.route = parseRoute();
         renderShell();
       });
-      OJApp.hashListenerBound = true;
+      hashListenerBound = true;
     }
     if (!state.token) {
       renderLogin();
       return;
     }
-    try {
-      applyBootstrapResponse(await api("/api/bootstrap"));
+    const renderAuthenticatedShell = () => {
       if (!window.location.hash) window.location.hash = "#/overview";
       state.route = parseRoute();
       renderShell();
+    };
+    try {
+      const renderedFromCache = applyCachedBootstrap();
+      if (renderedFromCache) {
+        renderAuthenticatedShell();
+        maybeRefreshLeaderboard?.().catch(() => {});
+      } else {
+        renderBootLoading();
+      }
+      applyBootstrapResponse(await api("/api/bootstrap"));
+      renderAuthenticatedShell();
       maybeRefreshLeaderboard?.().catch(() => {});
     } catch (error) {
       renderLogin(error.message);
     }
   })();
-  return OJApp.bootPromise;
+  return bootPromise;
 }
-  Object.assign(OJApp, { logout, renderLogin, renderRegister, boot });
-})();
+
+export { logout, renderLogin, renderRegister, boot };

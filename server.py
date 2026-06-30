@@ -9,14 +9,20 @@ from oj_platform.submissions import reset_interrupted_submissions
 from oj_platform.worker import start_worker
 
 
+class OJThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = settings.HTTP_REQUEST_QUEUE_SIZE
+
+
 def main():
     if not settings.FAULTS_DIR.exists() or not load_cases_list():
         raise SystemExit(f"no cases found below {settings.FAULTS_DIR}")
     db.init_db()
     reset_interrupted_submissions()
     start_worker()
-    server = ThreadingHTTPServer(("0.0.0.0", settings.PORT), Handler)
+    server = OJThreadingHTTPServer(("0.0.0.0", settings.PORT), Handler)
     print(f"AIOps OJ platform listening on 0.0.0.0:{settings.PORT}")
+    print(f"HTTP request queue size: {settings.HTTP_REQUEST_QUEUE_SIZE}")
     print(f"Environment: {settings.ENVIRONMENT}")
     if not settings.IS_PRODUCTION:
         print(

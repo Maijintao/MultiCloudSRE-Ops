@@ -54,10 +54,28 @@ RETRYABLE_SUBMISSION_STATUSES = {"done", "failed"}
 DEFAULT_SUBMISSIONS_PER_PAGE = 20
 MAX_SUBMISSIONS_PER_PAGE = 100
 DEFAULT_LEADERBOARD_LIMIT = 100
-BEIJING_TIMEZONE = timezone(timedelta(hours=8))
-OVERNIGHT_QUEUE_LIMIT = 50
+CONTESTANT_QUEUED_SUBMISSION_LIMIT = 50
 TEST_SET_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 TEST_SET_PLACEHOLDERS = {"fault_phenomenon", "public_case_info"}
+
+
+def normalize_submission_skill_ids(raw_skill_ids):
+    if raw_skill_ids is None:
+        return []
+    if not isinstance(raw_skill_ids, list):
+        raise ValueError("skill_ids must be a list")
+    skill_ids = []
+    for item in raw_skill_ids:
+        skill_ref = str(item or "").strip()
+        if not skill_ref:
+            continue
+        if len(skill_ref) > 64:
+            raise ValueError("invalid skill selection")
+        if skill_ref not in skill_ids:
+            skill_ids.append(skill_ref)
+    if len(skill_ids) > settings.MAX_SKILLS:
+        raise ValueError(f"can select at most {settings.MAX_SKILLS} skills")
+    return skill_ids
 
 
 def validate_submission_payload(payload):
@@ -71,22 +89,7 @@ def validate_submission_payload(payload):
         raise ValueError("prompt is required")
     if len(prompt) > settings.MAX_PROMPT_CHARS:
         raise ValueError(f"prompt is too long, max {settings.MAX_PROMPT_CHARS} chars")
-    if raw_skill_ids is None:
-        skill_ids = []
-    elif not isinstance(raw_skill_ids, list):
-        raise ValueError("skill_ids must be a list")
-    else:
-        skill_ids = []
-        for item in raw_skill_ids:
-            skill_ref = str(item or "").strip()
-            if not skill_ref:
-                continue
-            if len(skill_ref) > 64:
-                raise ValueError("invalid skill selection")
-            if skill_ref not in skill_ids:
-                skill_ids.append(skill_ref)
-    if len(skill_ids) > settings.MAX_SKILLS:
-        raise ValueError(f"can select at most {settings.MAX_SKILLS} skills")
+    skill_ids = normalize_submission_skill_ids(raw_skill_ids)
     mcp_servers = normalize_selected_public_mcp_servers(raw_mcp_servers, default_to_all=True)
     return {
         "case_id": case_id,
@@ -97,7 +100,16 @@ def validate_submission_payload(payload):
 
 
 def validate_test_set_submission_payload(payload):
-    data = validate_submission_payload({**(payload or {}), "case_id": next(iter(load_cases_map()), "")})
+    payload = payload or {}
+    prompt = str(payload.get("prompt", "")).strip()
+    if not prompt:
+        raise ValueError("prompt is required")
+    if len(prompt) > settings.MAX_PROMPT_CHARS:
+        raise ValueError(f"prompt is too long, max {settings.MAX_PROMPT_CHARS} chars")
+    data = {
+        "prompt": prompt,
+        "skill_ids": normalize_submission_skill_ids(payload.get("skill_ids")),
+    }
     data.pop("case_id", None)
     placeholders = {name.strip() for name in TEST_SET_PLACEHOLDER_PATTERN.findall(data["prompt"])}
     unsupported = sorted(placeholders - TEST_SET_PLACEHOLDERS)
@@ -132,16 +144,6 @@ def case_submission_enabled(case):
 
 def case_ai_analysis_visible(case):
     return bool((case or {}).get("ai_analysis_visible", True))
-
-
-def queued_submission_limit(total_queued):
-    return max(min(60 - int(total_queued), 15), 5)
-
-
-def is_beijing_overnight_submission_window(now=None):
-    current = now or datetime.now(timezone.utc)
-    beijing_now = current.astimezone(BEIJING_TIMEZONE)
-    return 0 <= beijing_now.hour < 7
 
 
 def can_delete_submission_row(row, user):
@@ -233,21 +235,11 @@ def enforce_queue_limit(conn, user, new_submission_count=1):
         (user["id"],),
     ).fetchone()["n"]
     new_submission_count = max(1, int(new_submission_count or 1))
-    if is_beijing_overnight_submission_window():
-        if own_queued + new_submission_count > OVERNIGHT_QUEUE_LIMIT:
-            raise ValueError(
-                "overnight queue limit reached: this submission batch would exceed 50 queued submissions; "
-                "contestant submissions reopen after 07:00 Beijing time"
-            )
-        return
-    total_queued = conn.execute(
-        "SELECT COUNT(*) AS n FROM submissions WHERE status = 'queued'"
-    ).fetchone()["n"]
-    limit = queued_submission_limit(total_queued)
+    limit = CONTESTANT_QUEUED_SUBMISSION_LIMIT
     if own_queued + new_submission_count > limit:
         raise ValueError(
             f"queued submission limit reached: this submission batch would exceed your current limit "
-            f"of {limit} queued submissions (currently {own_queued}, total queued: {total_queued})"
+            f"of {limit} queued submissions (currently {own_queued})"
         )
 
 
@@ -320,6 +312,8 @@ def create_test_set_submissions(user, test_set_id, data):
     members = test_set_members(test_set["id"])
     if not members:
         raise ValueError("test set has no cases")
+    mcp_servers = normalize_selected_public_mcp_servers(test_set.get("mcp_servers"), default_to_all=True)
+    data = {**data, "mcp_servers": mcp_servers}
     runtime = submission_runtime_context(user, data)
     now = utc_now()
     group_id = uuid.uuid4().hex
@@ -468,11 +462,7 @@ def submission_public(row, current_user, case=None):
     )
     can_delete = can_delete_submission_row(row, current_user)
     can_retry = can_retry_submission_row(row, current_user)
-    can_view_ai_analysis = (
-        current_user["role"] == "admin"
-        or test_submission
-        or case_ai_analysis_visible(case)
-    )
+    can_view_ai_analysis = current_user["role"] == "admin" or case_ai_analysis_visible(case)
     case_name = submission_display_case_name(row, current_user, case)
     public_case_id = row["case_id"] if not redact_hidden_submission else ""
     return {
@@ -526,15 +516,48 @@ def public_test_set_display_names():
     return names
 
 
-def public_test_set_filters(display_names=None):
-    names = public_test_set_display_names() if display_names is None else display_names
-    return [{"display_case_name": name} for name in sorted(names, key=lambda item: item.casefold())]
+def public_test_set_filter_ids():
+    return {
+        str(item.get("id") or "").strip()
+        for item in public_test_sets()
+        if str(item.get("id") or "").strip()
+    }
 
 
-def normalize_submission_list_options(username="", case_id="", display_case_name="", sort_by="created_at", sort_order="desc", page=1, per_page=DEFAULT_SUBMISSIONS_PER_PAGE):
+def public_test_set_filters():
+    filters = []
+    for item in public_test_sets():
+        test_set_id = str(item.get("id") or "").strip()
+        name = str(item.get("name") or test_set_id).strip()
+        if not test_set_id or not name:
+            continue
+        filters.append(
+            {
+                "id": test_set_id,
+                "test_set_id": test_set_id,
+                "name": name,
+                "case_numbers": item.get("case_numbers") or [],
+            }
+        )
+    return sorted(filters, key=lambda item: (str(item["name"]).casefold(), str(item["test_set_id"]).casefold()))
+
+
+def normalize_submission_list_options(
+    username="",
+    case_id="",
+    display_case_name="",
+    test_set_id="",
+    sort_by="created_at",
+    sort_order="desc",
+    page=1,
+    per_page=DEFAULT_SUBMISSIONS_PER_PAGE,
+):
     username = str(username or "").strip()
     case_id = str(case_id or "").strip()
     display_case_name = str(display_case_name or "").strip()
+    test_set_id = str(test_set_id or "").strip()
+    if test_set_id:
+        display_case_name = ""
     sort_by = "score" if str(sort_by or "").strip() == "score" else "created_at"
     sort_order = "asc" if str(sort_order or "").strip() == "asc" else "desc"
     try:
@@ -551,6 +574,7 @@ def normalize_submission_list_options(username="", case_id="", display_case_name
         "username": username,
         "case_id": case_id,
         "display_case_name": display_case_name,
+        "test_set_id": test_set_id,
         "sort_by": sort_by,
         "sort_order": sort_order,
         "page": page,
@@ -570,14 +594,44 @@ def submission_order_sql(sort_by, sort_order):
     return f"ORDER BY s.created_at {time_direction}, s.id {id_direction}"
 
 
-def list_submissions(user, username="", case_id="", display_case_name="", sort_by="created_at", sort_order="desc", page=1, per_page=DEFAULT_SUBMISSIONS_PER_PAGE):
-    options = normalize_submission_list_options(username, case_id, display_case_name, sort_by, sort_order, page, per_page)
+def list_submissions(
+    user,
+    username="",
+    case_id="",
+    display_case_name="",
+    test_set_id="",
+    sort_by="created_at",
+    sort_order="desc",
+    page=1,
+    per_page=DEFAULT_SUBMISSIONS_PER_PAGE,
+):
+    options = normalize_submission_list_options(
+        username=username,
+        case_id=case_id,
+        display_case_name=display_case_name,
+        test_set_id=test_set_id,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        per_page=per_page,
+    )
     test_set_display_names = public_test_set_display_names()
-    test_set_filters = public_test_set_filters(test_set_display_names)
+    test_set_filter_ids = public_test_set_filter_ids()
+    test_set_filters = public_test_set_filters()
     cases = load_public_cases_map(include_test_cases=True, include_details=False)
     if options["case_id"] and user["role"] != "admin":
         requested_case = cases.get(options["case_id"])
-        if not requested_case or is_ungrouped_case(requested_case):
+        if not requested_case or not is_training_case(requested_case):
+            return {
+                "submissions": [],
+                "page": 1,
+                "per_page": options["per_page"],
+                "total": 0,
+                "total_pages": 1,
+                "test_set_filters": test_set_filters,
+            }
+    if options["test_set_id"] and user["role"] != "admin":
+        if options["test_set_id"] not in test_set_filter_ids:
             return {
                 "submissions": [],
                 "page": 1,
@@ -604,6 +658,10 @@ def list_submissions(user, username="", case_id="", display_case_name="", sort_b
     if options["case_id"]:
         where.append("s.case_id = ?")
         params.append(options["case_id"])
+    if options["test_set_id"]:
+        where.append("s.source_kind = 'test_set'")
+        where.append("s.test_set_id = ?")
+        params.append(options["test_set_id"])
     if options["display_case_name"]:
         where.append("s.source_kind = 'test_set'")
         where.append("s.display_case_name = ?")
@@ -692,30 +750,127 @@ def personal_best_scores_by_case(user_id):
     }
 
 
+def current_test_set_case_map():
+    configured_test_set_ids = {
+        str(item.get("id") or "").strip()
+        for item in public_test_sets()
+        if str(item.get("id") or "").strip()
+    }
+    if not configured_test_set_ids:
+        return {}
+    case_map = {test_set_id: [] for test_set_id in configured_test_set_ids}
+    for case in load_cases_list():
+        test_set_id = case_set_id(case)
+        if test_set_id in case_map:
+            case_map[test_set_id].append(case["id"])
+    return {
+        test_set_id: case_ids
+        for test_set_id, case_ids in case_map.items()
+        if case_ids
+    }
+
+
+def test_set_member_values_sql(test_set_case_map):
+    values = []
+    params = []
+    for test_set_id, case_ids in sorted(test_set_case_map.items()):
+        expected_count = len(case_ids)
+        for case_id in case_ids:
+            values.append("(?, ?, ?)")
+            params.extend([test_set_id, case_id, expected_count])
+    return ", ".join(values), params
+
+
+def personal_best_scores_by_test_set(user_id):
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return {}
+    if user_id <= 0:
+        return {}
+    test_set_case_map = current_test_set_case_map()
+    if not test_set_case_map:
+        return {}
+    values_sql, params = test_set_member_values_sql(test_set_case_map)
+    with db.connect() as conn:
+        rows = conn.execute(
+            f"""
+            WITH current_test_members(test_set_id, case_id, expected_count) AS (
+                VALUES {values_sql}
+            ),
+            test_attempt_case_scores AS (
+                SELECT
+                    s.user_id,
+                    s.test_set_id,
+                    s.submission_group_id,
+                    s.case_id,
+                    MAX(
+                        CASE
+                            WHEN s.status = 'done' AND s.score IS NOT NULL THEN s.score
+                            WHEN s.status = 'failed' THEN 0
+                            ELSE NULL
+                        END
+                    ) AS case_score,
+                    MAX(COALESCE(s.finished_at, s.updated_at, s.created_at)) AS case_latest_at,
+                    MAX(m.expected_count) AS expected_count
+                FROM submissions s
+                JOIN current_test_members m
+                  ON m.test_set_id = s.test_set_id
+                 AND m.case_id = s.case_id
+                WHERE s.user_id = ?
+                  AND s.source_kind = 'test_set'
+                  AND s.submission_group_id IS NOT NULL
+                  AND TRIM(s.submission_group_id) <> ''
+                GROUP BY s.user_id, s.test_set_id, s.submission_group_id, s.case_id
+            ),
+            test_attempts AS (
+                SELECT
+                    user_id,
+                    test_set_id,
+                    submission_group_id,
+                    SUM(case_score) AS group_score,
+                    COUNT(case_id) AS scored_cases,
+                    MAX(case_latest_at) AS latest_score_at,
+                    MAX(expected_count) AS expected_count
+                FROM test_attempt_case_scores
+                GROUP BY user_id, test_set_id, submission_group_id
+                HAVING SUM(CASE WHEN case_score IS NOT NULL THEN 1 ELSE 0 END) = MAX(expected_count)
+            ),
+            ranked_test_attempts AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY user_id, test_set_id
+                        ORDER BY group_score DESC, latest_score_at ASC, submission_group_id ASC
+                    ) AS rn
+                FROM test_attempts
+            )
+            SELECT test_set_id, group_score
+            FROM ranked_test_attempts
+            WHERE rn = 1
+            """,
+            params + [user_id],
+        ).fetchall()
+    return {
+        str(row["test_set_id"]): int(row["group_score"] or 0)
+        for row in rows
+        if row["test_set_id"] is not None
+    }
+
+
 def hidden_case_leaderboard(limit=DEFAULT_LEADERBOARD_LIMIT):
     try:
         limit = int(limit)
     except (TypeError, ValueError):
         limit = DEFAULT_LEADERBOARD_LIMIT
     limit = max(1, min(500, limit))
-    cases = load_cases_list()
-    configured_test_set_ids = {
-        str(item.get("id") or "").strip()
-        for item in public_test_sets()
-        if str(item.get("id") or "").strip()
-    }
+    test_set_case_map = current_test_set_case_map()
     test_set_case_ids = [
-        case["id"]
-        for case in cases
-        if case_set_id(case) in configured_test_set_ids
+        case_id
+        for case_ids in test_set_case_map.values()
+        for case_id in case_ids
     ]
-    test_set_case_id_set = set(test_set_case_ids)
-    hidden_case_ids = [
-        case["id"]
-        for case in cases
-        if case["id"] not in test_set_case_id_set and not case_ai_analysis_visible(case)
-    ]
-    leaderboard_case_count = len(hidden_case_ids) + len(test_set_case_ids)
+    leaderboard_case_count = len(test_set_case_ids)
     if not leaderboard_case_count:
         return {
             "leaderboard": [],
@@ -724,49 +879,98 @@ def hidden_case_leaderboard(limit=DEFAULT_LEADERBOARD_LIMIT):
             "leaderboard_case_count": 0,
         }
 
-    score_conditions = []
-    score_params = []
-    if hidden_case_ids:
-        placeholders = ", ".join("?" for _ in hidden_case_ids)
-        score_conditions.append(f"s.case_id IN ({placeholders})")
-        score_params.extend(hidden_case_ids)
-    if test_set_case_ids:
-        placeholders = ", ".join("?" for _ in test_set_case_ids)
-        score_conditions.append(
-            f"(s.case_id IN ({placeholders}) AND s.source_kind = 'test_set')"
+    ctes = []
+    cte_params = []
+    values_sql, values_params = test_set_member_values_sql(test_set_case_map)
+    ctes.extend([
+        f"""
+        current_test_members(test_set_id, case_id, expected_count) AS (
+            VALUES {values_sql}
         )
-        score_params.extend(test_set_case_ids)
-    score_filter = " OR ".join(f"({condition})" for condition in score_conditions)
+        """,
+        """
+        test_attempt_case_scores AS (
+            SELECT
+                s.user_id,
+                s.test_set_id,
+                s.submission_group_id,
+                s.case_id,
+                MAX(
+                    CASE
+                        WHEN s.status = 'done' AND s.score IS NOT NULL THEN s.score
+                        WHEN s.status = 'failed' THEN 0
+                        ELSE NULL
+                    END
+                ) AS case_score,
+                MAX(COALESCE(s.finished_at, s.updated_at, s.created_at)) AS case_latest_at,
+                MAX(m.expected_count) AS expected_count
+            FROM submissions s
+            JOIN current_test_members m
+              ON m.test_set_id = s.test_set_id
+             AND m.case_id = s.case_id
+            WHERE s.source_kind = 'test_set'
+              AND s.submission_group_id IS NOT NULL
+              AND TRIM(s.submission_group_id) <> ''
+            GROUP BY s.user_id, s.test_set_id, s.submission_group_id, s.case_id
+        )
+        """,
+        """
+        test_attempts AS (
+            SELECT
+                user_id,
+                test_set_id,
+                submission_group_id,
+                SUM(case_score) AS group_score,
+                COUNT(case_id) AS scored_cases,
+                MAX(case_latest_at) AS latest_score_at,
+                MAX(expected_count) AS expected_count
+            FROM test_attempt_case_scores
+            GROUP BY user_id, test_set_id, submission_group_id
+            HAVING SUM(CASE WHEN case_score IS NOT NULL THEN 1 ELSE 0 END) = MAX(expected_count)
+        )
+        """,
+        """
+        ranked_test_attempts AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY user_id, test_set_id
+                    ORDER BY group_score DESC, latest_score_at ASC, submission_group_id ASC
+                ) AS rn
+            FROM test_attempts
+        )
+        """,
+        """
+        unified_scores AS (
+            SELECT
+                user_id,
+                test_set_id AS score_key,
+                group_score AS best_score,
+                scored_cases,
+                latest_score_at
+            FROM ranked_test_attempts
+            WHERE rn = 1
+        )
+        """,
+    ])
+    cte_params.extend(values_params)
+    cte_sql = ",\n".join(ctes)
     with db.connect() as conn:
         rows = conn.execute(
             f"""
-            WITH best_scores AS (
-                SELECT
-                    s.user_id,
-                    s.case_id,
-                    MAX(s.score) AS best_score,
-                    MAX(COALESCE(s.finished_at, s.updated_at, s.created_at)) AS latest_score_at
-                FROM submissions s
-                JOIN users u ON u.id = s.user_id
-                WHERE u.role = 'contestant'
-                  AND u.disabled = 0
-                  AND s.status = 'done'
-                  AND s.score IS NOT NULL
-                  AND ({score_filter})
-                GROUP BY s.user_id, s.case_id
-            )
+            WITH {cte_sql}
             SELECT
                 u.id AS user_id,
                 u.username,
-                COALESCE(SUM(best_scores.best_score), 0) AS total_score,
-                COUNT(best_scores.case_id) AS scored_cases,
-                MAX(best_scores.latest_score_at) AS latest_score_at
+                COALESCE(SUM(unified_scores.best_score), 0) AS total_score,
+                COALESCE(SUM(unified_scores.scored_cases), 0) AS scored_cases,
+                MAX(unified_scores.latest_score_at) AS latest_score_at
             FROM users u
-            LEFT JOIN best_scores ON best_scores.user_id = u.id
+            LEFT JOIN unified_scores ON unified_scores.user_id = u.id
             WHERE u.role = 'contestant'
               AND u.disabled = 0
             GROUP BY u.id, u.username
-            HAVING COUNT(best_scores.case_id) > 0
+            HAVING COUNT(unified_scores.score_key) > 0
             ORDER BY
                 total_score DESC,
                 scored_cases DESC,
@@ -776,7 +980,7 @@ def hidden_case_leaderboard(limit=DEFAULT_LEADERBOARD_LIMIT):
                 u.id ASC
             LIMIT ?
             """,
-            score_params + [limit],
+            cte_params + [limit],
         ).fetchall()
     leaderboard = []
     for index, row in enumerate(rows, start=1):
@@ -792,7 +996,7 @@ def hidden_case_leaderboard(limit=DEFAULT_LEADERBOARD_LIMIT):
         )
     return {
         "leaderboard": leaderboard,
-        "hidden_case_count": leaderboard_case_count,
+        "hidden_case_count": 0,
         "test_set_case_count": len(test_set_case_ids),
         "leaderboard_case_count": leaderboard_case_count,
     }
@@ -860,11 +1064,7 @@ def get_submission(submission_id, user):
     item["verdict"] = verdict_for_score(item.get("score"))
     item["can_delete"] = can_delete_submission_row(item, user)
     item["can_retry"] = can_retry_submission_row(item, user)
-    item["can_view_ai_analysis"] = (
-        user["role"] == "admin"
-        or is_test_set_submission(item, case)
-        or case_ai_analysis_visible(case)
-    )
+    item["can_view_ai_analysis"] = user["role"] == "admin" or case_ai_analysis_visible(case)
     item["error"] = display_submission_error(item)
     item["answer_process"] = answer_process_for_grading(item.get("answer_transcript") or "")
     item["grade_process"] = answer_process_for_grading(item.get("grade_transcript") or "")

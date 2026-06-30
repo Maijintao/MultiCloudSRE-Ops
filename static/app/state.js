@@ -1,6 +1,4 @@
-(function () {
-  const OJApp = window.OJApp || (window.OJApp = {});
-const state = {
+export const state = {
   token: localStorage.getItem("oj_token") || "",
   savedUsername: localStorage.getItem("oj_saved_username") || "",
   user: null,
@@ -32,6 +30,7 @@ const state = {
     username: "",
     caseId: "",
     displayCaseName: "",
+    testSetId: "",
     sortBy: "created_at",
     sortOrder: "desc",
     page: 1,
@@ -50,6 +49,10 @@ const state = {
     agentLoadedAt: 0,
     agentLoadingPromise: null,
     agentError: "",
+    graderConfig: null,
+    graderLoadedAt: 0,
+    graderLoadingPromise: null,
+    graderError: "",
   },
   detailStreamAbort: null,
   detailElapsedTimer: null,
@@ -58,7 +61,4 @@ const state = {
   sidebarScrollTop: 0,
 };
 
-const app = document.getElementById("app");
-  OJApp.state = state;
-  OJApp.app = app;
-})();
+export const app = document.getElementById("app");

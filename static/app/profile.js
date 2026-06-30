@@ -1,18 +1,10 @@
-(function () {
-  const OJApp = window.OJApp;
-  const {
-    state,
-    escapeHtml,
-    routeTo,
-    showNotice,
-    api,
-    currentSkills,
-    renderSkillManagerSection,
-    bindSkillManager,
-    currentSoulMarkdown,
-    renderSoulEditorSection,
-    bindSoulEditor,
-  } = OJApp;
+import { api } from "./api.js";
+import { showNotice } from "./notice.js";
+import { routeTo } from "./router.js";
+import { currentSkills, renderSkillManagerSection, bindSkillManager } from "./skills.js";
+import { currentSoulMarkdown, renderSoulEditorSection, bindSoulEditor } from "./soul.js";
+import { state } from "./state.js";
+import { escapeHtml } from "./utils.js";
 
   function renderProfile() {
     const profile = state.profile || {};
@@ -195,5 +187,4 @@
     });
   }
 
-  OJApp.renderProfile = renderProfile;
-})();
+export { renderProfile };

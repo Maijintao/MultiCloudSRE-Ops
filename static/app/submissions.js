@@ -1,28 +1,36 @@
-(function () {
-  const OJApp = window.OJApp;
-  const {
-    state,
-    escapeHtml,
-    routeTo,
-    showNotice,
-    copyIconButton,
-    downloadIconButton,
-    bindCopyButtons,
-    bindDownloadButtons,
-    refreshSubmissions,
-    refreshLeaderboard,
-    api,
-    caseNavLabel,
-    compactTime,
-    statusClass,
-    statusText,
-    verdictText,
-    submissionDurationText,
-    renderLogLines,
-    gradingResultText,
-    processOutputText,
-    confirmTwice,
-  } = OJApp;
+import { api } from "./api.js";
+import { copyIconButton, downloadIconButton, bindCopyButtons, bindDownloadButtons } from "./copy.js";
+import { refreshLeaderboard, refreshSubmissions } from "./data.js";
+import { showNotice } from "./notice.js";
+import { routeTo } from "./router.js";
+import { state } from "./state.js";
+import {
+  caseNavLabel,
+  caseOrderText,
+  compactTime,
+  confirmTwice,
+  escapeHtml,
+  gradingResultText,
+  processOutputText,
+  renderLogLines,
+  statusClass,
+  statusText,
+  submissionDurationText,
+  verdictText,
+} from "./utils.js";
+
+let submissionRefreshTimer = 0;
+
+function scheduleSubmissionRefresh(options = {}) {
+  if (submissionRefreshTimer) window.clearTimeout(submissionRefreshTimer);
+  const routeName = state.route.name;
+  submissionRefreshTimer = window.setTimeout(() => {
+    submissionRefreshTimer = 0;
+    if (routeName !== "submissions" || state.route.name !== "submissions") return;
+    if (state.submissionsLoadingPromise) return;
+    refreshSubmissions(options).catch((error) => showNotice(error.message, "error"));
+  }, 0);
+}
 
   function closeDetailStream() {
     if (state.detailStreamAbort) {
@@ -37,44 +45,44 @@
   }
 
   function testSetFilterOptions() {
-    const optionsByName = new Map();
-    (Array.isArray(state.testSets) ? state.testSets : []).forEach((testSet) => {
-      const name = String(testSet?.name || testSet?.id || "").trim();
-      if (!name) return;
-      const numbers = Array.isArray(testSet?.case_numbers) ? testSet.case_numbers : [];
-      numbers.forEach((caseNumber, index) => {
-        const displayName = `${name}-${index + 1}`;
-        const numberText = String(caseNumber || "").trim();
-        optionsByName.set(displayName, {
-          value: `test:${displayName}`,
-          label: numberText ? `${displayName}（#${numberText}）` : displayName,
-          displayName,
-          caseNumber: numberText,
-        });
-      });
-    });
+    const optionsById = new Map();
     (Array.isArray(state.submissionTestSetFilters) ? state.submissionTestSetFilters : []).forEach((item) => {
-      const displayName = String(item?.display_case_name || item || "").trim();
-      if (!displayName || optionsByName.has(displayName)) return;
-      optionsByName.set(displayName, {
-        value: `test:${displayName}`,
-        label: displayName,
-        displayName,
-        caseNumber: "",
+      const testSetId = String(item?.test_set_id || item?.id || "").trim();
+      const name = String(item?.name || testSetId).trim();
+      if (!testSetId || !name) return;
+      const numbers = Array.isArray(item?.case_numbers)
+        ? item.case_numbers.map((caseNumber) => String(caseNumber || "").trim()).filter(Boolean)
+        : [];
+      optionsById.set(testSetId, {
+        value: `testset:${testSetId}`,
+        label: numbers.length ? `${name}（#${numbers.join("、")}）` : name,
+        testSetId,
+        displayName: "",
       });
     });
-    return Array.from(optionsByName.values());
+    (Array.isArray(state.testSets) ? state.testSets : []).forEach((testSet) => {
+      const testSetId = String(testSet?.id || "").trim();
+      const name = String(testSet?.name || testSet?.id || "").trim();
+      if (!testSetId || !name || optionsById.has(testSetId)) return;
+      const numbers = Array.isArray(testSet?.case_numbers) ? testSet.case_numbers : [];
+      const numberText = numbers.map((caseNumber) => String(caseNumber || "").trim()).filter(Boolean);
+      optionsById.set(testSetId, {
+        value: `testset:${testSetId}`,
+        label: numberText.length ? `${name}（#${numberText.join("、")}）` : name,
+        testSetId,
+        displayName: "",
+      });
+    });
+    return Array.from(optionsById.values());
   }
 
-  function testSetCaseNumbers() {
-    return new Set(testSetFilterOptions().map((item) => item.caseNumber).filter(Boolean));
+  function isTrainingCaseFilterOption(item) {
+    return !item?.case_set_id || item.case_set_id === "training";
   }
 
   function submissionVisibleCaseOptions() {
     return (Array.isArray(state.cases) ? state.cases : [])
-      .filter((item) => {
-        return !item?.case_set_id || item.case_set_id !== "ungrouped";
-      })
+      .filter(isTrainingCaseFilterOption)
       .map((item) => ({
         value: `case:${item.id}`,
         label: `${caseNavLabel(item)} · ${item.id}`,
@@ -82,6 +90,8 @@
   }
 
   function submissionCaseFilterValue() {
+    const testSetId = String(state.submissionView.testSetId || "").trim();
+    if (testSetId) return `testset:${testSetId}`;
     const displayCaseName = String(state.submissionView.displayCaseName || "").trim();
     if (displayCaseName) return `test:${displayCaseName}`;
     const caseId = String(state.submissionView.caseId || "").trim();
@@ -98,7 +108,7 @@
         <option value="${escapeHtml(item.value)}" ${selectedValue === item.value ? "selected" : ""}>${escapeHtml(item.label)}</option>
       `).join("")}
       ${testOptions.length ? `
-        <optgroup label="测试集快照">
+        <optgroup label="测试集">
           ${testOptions.map((item) => `
             <option value="${escapeHtml(item.value)}" ${selectedValue === item.value ? "selected" : ""}>${escapeHtml(item.label)}</option>
           `).join("")}
@@ -111,8 +121,11 @@
     const raw = String(value || "").trim();
     state.submissionView.caseId = "";
     state.submissionView.displayCaseName = "";
+    state.submissionView.testSetId = "";
     if (raw.startsWith("case:")) {
       state.submissionView.caseId = raw.slice(5).trim();
+    } else if (raw.startsWith("testset:")) {
+      state.submissionView.testSetId = raw.slice(8).trim();
     } else if (raw.startsWith("test:")) {
       state.submissionView.displayCaseName = raw.slice(5).trim();
     }
@@ -128,7 +141,7 @@
     showNotice(`提交 #${item.id} 已删除`, "success");
     closeDetailStream();
     await refreshSubmissions({ clearItems: true });
-    await refreshLeaderboard?.();
+    refreshLeaderboard?.().catch(() => {});
     if (options.redirectToList) {
       routeTo("/submissions");
     }
@@ -207,8 +220,8 @@
       refreshSubmissions({ clearItems: true }).catch((error) => showNotice(error.message, "error"));
     });
     bindSubmissionToolbar();
-    refreshSubmissions({ clearItems: !state.submissions.length }).catch((error) => showNotice(error.message, "error"));
     renderSubmissionTable();
+    scheduleSubmissionRefresh({ clearItems: !state.submissions.length });
   }
 
   function bindSubmissionToolbar() {
@@ -241,6 +254,7 @@
         username: "",
         caseId: "",
         displayCaseName: "",
+        testSetId: "",
         sortBy: "created_at",
         sortOrder: "desc",
         page: 1,
@@ -587,8 +601,8 @@
 
     bindDetailDeleteAction(item);
     const caseItem = caseForSubmission(item);
-    const orderPrefix = caseItem?.order_id ? `${OJApp.caseOrderText(caseItem)} · ` : "";
-    const aiVisible = item?.source_kind === "test_set" || caseItem?.ai_analysis_visible !== false;
+    const orderPrefix = caseItem?.order_id ? `${caseOrderText(caseItem)} · ` : "";
+    const aiVisible = item?.can_view_ai_analysis !== false;
     const titleText = item?.source_kind === "test_set"
       ? (item.display_case_name || item.test_set_name || "测试集")
       : `${orderPrefix}${caseItem?.title || item.case_name || item.case_id}`;
@@ -727,7 +741,7 @@
         answer_process: "",
         grade_process: "",
         error: "",
-        can_view_ai_analysis: cachedItem?.source_kind === "test_set" || state.user?.role === "admin" || caseConfigById(cachedItem.case_id)?.ai_analysis_visible !== false,
+        can_view_ai_analysis: state.user?.role === "admin" || caseConfigById(cachedItem.case_id)?.ai_analysis_visible !== false,
       });
     }
     let item;
@@ -743,18 +757,17 @@
     if (shouldStreamSubmission(item)) startSubmissionStream(id);
   }
 
-  Object.assign(OJApp, {
-    closeDetailStream,
-    deleteSubmissionWithConfirm,
-    retrySubmissionWithConfirm,
-    renderSubmissions,
-    bindSubmissionToolbar,
-    renderSubmissionTable,
-    syncDetailElapsed,
-    updateDetailElapsedClock,
-    updateSubmissionDetailView,
-    updateSubmissionDetail,
-    startSubmissionStream,
-    renderSubmissionDetail,
-  });
-})();
+export {
+  closeDetailStream,
+  deleteSubmissionWithConfirm,
+  retrySubmissionWithConfirm,
+  renderSubmissions,
+  bindSubmissionToolbar,
+  renderSubmissionTable,
+  syncDetailElapsed,
+  updateDetailElapsedClock,
+  updateSubmissionDetailView,
+  updateSubmissionDetail,
+  startSubmissionStream,
+  renderSubmissionDetail,
+};

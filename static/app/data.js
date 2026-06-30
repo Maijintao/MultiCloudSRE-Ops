@@ -1,7 +1,9 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state, api } = OJApp;
-  const LEADERBOARD_CACHE_KEY = "oj_leaderboard_cache_v3";
+import { emit } from "./events.js";
+import { api } from "./api.js";
+import { state } from "./state.js";
+
+  const BOOTSTRAP_CACHE_KEY = "oj_bootstrap_cache_v1";
+  const LEADERBOARD_CACHE_KEY = "oj_leaderboard_cache_v5";
   const CASES_CACHE_KEY_PREFIX = "oj_cases_cache_v3:";
   const SUBMISSION_SUMMARY_CACHE_PREFIX = "oj_submission_summary_v2:";
 
@@ -163,13 +165,15 @@ function submissionListUrl() {
   const username = String(state.submissionView?.username || "").trim();
   const caseId = String(state.submissionView?.caseId || "").trim();
   const displayCaseName = String(state.submissionView?.displayCaseName || "").trim();
+  const testSetId = String(state.submissionView?.testSetId || "").trim();
   const sortBy = state.submissionView?.sortBy === "score" ? "score" : "created_at";
   const sortOrder = state.submissionView?.sortOrder === "asc" ? "asc" : "desc";
   const page = Math.max(1, Number(state.submissionView?.page) || 1);
   const perPage = Math.max(1, Math.min(100, Number(state.submissionView?.perPage) || 20));
   if (username) params.set("username", username);
   if (caseId) params.set("case_id", caseId);
-  if (displayCaseName) params.set("display_case_name", displayCaseName);
+  if (testSetId) params.set("test_set_id", testSetId);
+  else if (displayCaseName) params.set("display_case_name", displayCaseName);
   params.set("sort_by", sortBy);
   params.set("sort_order", sortOrder);
   params.set("page", String(page));
@@ -192,11 +196,59 @@ function applySubmissionListResponse(data) {
   state.submissionView.perPage = Math.max(1, Number.isFinite(perPage) ? perPage : state.submissionView.perPage || 20);
 }
 
-function applyBootstrapResponse(data) {
+function readBootstrapCache() {
+  try {
+    const raw = localStorage.getItem(BOOTSTRAP_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!state.token || parsed.token !== state.token) return null;
+    if (!parsed.user || typeof parsed.user !== "object") return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeBootstrapCache(data) {
+  if (!state.token || !data?.user) return;
+  try {
+    localStorage.setItem(BOOTSTRAP_CACHE_KEY, JSON.stringify({
+      token: state.token,
+      user: data.user,
+      profile: data.profile || null,
+      config: data.config || {},
+      test_sets: Array.isArray(data.test_sets) ? data.test_sets : data.config?.test_sets || [],
+      cases: Array.isArray(data.cases) ? data.cases : [],
+      loaded_at: Date.now(),
+    }));
+  } catch (error) {
+    // Ignore storage failures; bootstrap will fall back to the network.
+  }
+}
+
+function clearBootstrapCache() {
+  try {
+    localStorage.removeItem(BOOTSTRAP_CACHE_KEY);
+  } catch (error) {
+    // Ignore storage failures.
+  }
+}
+
+function applyCachedBootstrap() {
+  const cached = readBootstrapCache();
+  if (!cached) return false;
+  applyBootstrapResponse(cached, { skipCacheWrite: true });
+  return true;
+}
+
+function applyBootstrapResponse(data, options = {}) {
   if (data?.user) state.user = data.user;
   state.config = data?.config || {};
   state.profile = data?.profile || null;
-  applyTestSetsResponse({ test_sets: state.config?.test_sets || [] });
+  applyTestSetsResponse({
+    test_sets: Array.isArray(data?.test_sets) ? data.test_sets : state.config?.test_sets || [],
+  });
   applyCasesResponse({ cases: data?.cases || [] });
   writeCasesCache();
   state.submissions = [];
@@ -211,21 +263,29 @@ function applyBootstrapResponse(data) {
     state.testSetLeaderboardCaseCount = 0;
     state.leaderboardLoadedAt = 0;
   }
+  if (!options.skipCacheWrite) writeBootstrapCache({
+    user: state.user,
+    profile: state.profile,
+    config: state.config,
+    test_sets: state.testSets,
+    cases: state.cases,
+  });
 }
 
 async function loadInitialData(options = {}) {
   const includeSubmissions = options.includeSubmissions === true;
   const allowCachedCases = options.useCachedCases !== false;
   const hasCachedCases = allowCachedCases && applyCachedCases();
-  const [config, profileData, caseData, submissionData] = await Promise.all([
+  const [config, profileData, testSetData, caseData, submissionData] = await Promise.all([
     api("/api/config"),
     api("/api/profile"),
+    api("/api/test-sets"),
     hasCachedCases ? Promise.resolve(null) : api("/api/cases"),
     includeSubmissions ? api(submissionListUrl()) : Promise.resolve(null),
   ]);
   state.config = config;
   state.profile = profileData.profile;
-  applyTestSetsResponse({ test_sets: config?.test_sets || [] });
+  applyTestSetsResponse(testSetData || { test_sets: config?.test_sets || [] });
   if (caseData) {
     applyCasesResponse(caseData);
     writeCasesCache();
@@ -257,7 +317,7 @@ async function refreshCases(options = {}) {
     const data = await api("/api/cases");
     applyCasesResponse(data);
     writeCasesCache();
-    if (options.rerender && typeof OJApp.renderCurrentView === "function") OJApp.renderCurrentView();
+    if (options.rerender) emit("view:render");
     return data;
   })();
   state.casesLoadingPromise = request;
@@ -274,7 +334,7 @@ async function refreshTestSets(options = {}) {
   const request = (async () => {
     const data = await api("/api/test-sets");
     applyTestSetsResponse(data);
-    if (options.rerender && typeof OJApp.renderCurrentView === "function") OJApp.renderCurrentView();
+    if (options.rerender) emit("view:render");
     return data;
   })();
   state.testSetsLoadingPromise = request;
@@ -298,17 +358,17 @@ async function refreshSubmissions(options = {}) {
     if (requestId !== state.submissionsRequestId) return data;
     applySubmissionListResponse(data);
     writeSubmissionSummaryCache();
-    if (state.route.name === "submissions" && typeof OJApp.renderSubmissionTable === "function") OJApp.renderSubmissionTable();
-    else if (state.route.name === "overview" && typeof OJApp.renderOverview === "function") OJApp.renderOverview();
+    if (state.route.name === "submissions") emit("submissions:table");
+    else if (state.route.name === "overview") emit("overview:render");
     return data;
   })();
   state.submissionsLoadingPromise = request;
-  if (state.route.name === "submissions" && typeof OJApp.renderSubmissionTable === "function") OJApp.renderSubmissionTable();
+  if (state.route.name === "submissions") emit("submissions:table");
   try {
     return await request;
   } finally {
     if (state.submissionsRequestId === requestId) state.submissionsLoadingPromise = null;
-    if (state.route.name === "submissions" && typeof OJApp.renderSubmissionTable === "function") OJApp.renderSubmissionTable();
+    if (state.route.name === "submissions") emit("submissions:table");
   }
 }
 
@@ -318,8 +378,8 @@ async function refreshLeaderboard(options = {}) {
     const data = await api(leaderboardUrl(options.limit));
     applyLeaderboardResponse(data);
     writeLeaderboardCache();
-    if (typeof OJApp.renderSidebarLeaderboard === "function") OJApp.renderSidebarLeaderboard();
-    if (options.rerenderShell && typeof OJApp.renderShell === "function") OJApp.renderShell();
+    emit("leaderboard:sidebar");
+    if (options.rerenderShell) emit("shell:render");
     return data;
   })();
   state.leaderboardLoadingPromise = request;
@@ -337,14 +397,14 @@ async function maybeRefreshLeaderboard(options = {}) {
   if (!options.force && fresh) return null;
   return refreshLeaderboard(options);
 }
-
-  Object.assign(OJApp, {
-    applyBootstrapResponse,
-    loadInitialData,
-    refreshCases,
-    refreshTestSets,
-    refreshSubmissions,
-    refreshLeaderboard,
-    maybeRefreshLeaderboard,
-  });
-})();
+export {
+  applyCachedBootstrap,
+  applyBootstrapResponse,
+  clearBootstrapCache,
+  loadInitialData,
+  refreshCases,
+  refreshTestSets,
+  refreshSubmissions,
+  refreshLeaderboard,
+  maybeRefreshLeaderboard,
+};

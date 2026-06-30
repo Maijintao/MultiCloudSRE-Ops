@@ -16,7 +16,14 @@
       "id": "test-set-1",
       "name": "Demo Set",
       "order_id": 1,
-      "submission_enabled": true
+      "submission_enabled": true,
+      "mcp_servers": [
+        "alibaba-cloud-ops-mcp-server",
+        "k3s-cluster",
+        "rum",
+        "rum2",
+        "multi-cloud-ssh"
+      ]
     }
   ],
   "next_test_set_number": 2,

@@ -1,6 +1,6 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { escapeHtml, showNotice } = OJApp;
+import { showNotice } from "./notice.js";
+import { escapeHtml } from "./utils.js";
+
 function copyIconButton(target, label = "复制内容") {
   return `
     <button type="button" class="ghost slim icon-button" data-copy-target="${escapeHtml(target)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
@@ -125,12 +125,11 @@ function bindDownloadButtons(root = document) {
   });
 }
 
-  Object.assign(OJApp, {
-    copyIconButton,
-    downloadIconButton,
-    copyTextFromElement,
-    downloadTextFromElement,
-    bindCopyButtons,
-    bindDownloadButtons,
-  });
-})();
+export {
+  copyIconButton,
+  downloadIconButton,
+  copyTextFromElement,
+  downloadTextFromElement,
+  bindCopyButtons,
+  bindDownloadButtons,
+};

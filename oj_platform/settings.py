@@ -25,6 +25,7 @@ def require_production_env(name, default=""):
 
 
 PORT = int(os.environ.get("PORT", "8090"))
+HTTP_REQUEST_QUEUE_SIZE = int(os.environ.get("OJ_HTTP_REQUEST_QUEUE_SIZE", "128"))
 JWT_TTL_SECONDS = int(os.environ.get("OJ_JWT_TTL_SECONDS", str(2 * 24 * 3600)))
 ADMIN_USERNAME = os.environ.get("OJ_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = require_production_env("OJ_ADMIN_PASSWORD", "dev-admin-password")
@@ -33,9 +34,9 @@ JWT_SECRET_ENV = require_production_env("OJ_JWT_SECRET", "")
 
 DEFAULT_MODEL = os.environ.get("OJ_DEFAULT_MODEL", "gpt-4o-mini")
 MODEL_CHECK_USER_AGENT = os.environ.get("OJ_MODEL_CHECK_USER_AGENT", "oj-platform/1.0")
-GRADER_BASE_URL = require_production_env("OJ_GRADER_BASE_URL", "").strip().rstrip("/")
-GRADER_MODEL = require_production_env("OJ_GRADER_MODEL", "").strip()
-GRADER_API_KEY = require_production_env("OJ_GRADER_API_KEY", "").strip()
+GRADER_BASE_URL = os.environ.get("OJ_GRADER_BASE_URL", "").strip().rstrip("/")
+GRADER_MODEL = os.environ.get("OJ_GRADER_MODEL", "").strip()
+GRADER_API_KEY = os.environ.get("OJ_GRADER_API_KEY", "").strip()
 GRADER_LABEL = os.environ.get("OJ_GRADER_LABEL", "Platform grading API").strip() or "Platform grading API"
 MAX_PROMPT_CHARS = int(os.environ.get("OJ_MAX_PROMPT_CHARS", "50000"))
 MAX_SKILL_CHARS = int(os.environ.get("OJ_MAX_SKILL_CHARS", "100000"))

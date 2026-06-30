@@ -1,6 +1,7 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state, escapeHtml, routeTo, copyIconButton, bindCopyButtons } = OJApp;
+import { bindCopyButtons, copyIconButton } from "./copy.js";
+import { routeTo } from "./router.js";
+import { state } from "./state.js";
+import { escapeHtml } from "./utils.js";
 
   function renderOverview() {
     const view = document.getElementById("mainView");
@@ -106,5 +107,4 @@
     bindCopyButtons(view);
   }
 
-  Object.assign(OJApp, { renderOverview });
-})();
+export { renderOverview };

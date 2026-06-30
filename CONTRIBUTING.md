@@ -1,28 +1,21 @@
-# Contributing
+# 贡献指南
 
-Thanks for improving AIOps OJ Platform.
+感谢你改进 AIOps OJ Platform。
 
-## Development
+## 开发检查
 
-Use Python 3.10 or newer.
-
-```bash
-python -m unittest discover -s tests -v
-node scripts/build-static-app.js
-```
-
-The frontend source lives in `static/app/`. The checked-in `static/app.js`
-bundle is generated from those files so the app can run without a separate
-frontend build system.
-
-## Case Materials
-
-Only commit public demo cases. Private competition cases, hidden answers,
-real cloud hosts, kubeconfigs, API keys, SSH keys, database files, screenshots,
-and run state must stay out of the public repository.
-
-Before opening a pull request, run the tests and check for accidental secrets:
+需要 Python 3.10 或更新版本。
 
 ```bash
 python -m unittest discover -s tests -v
+node scripts/check-frontend-modules.js
 ```
+
+前端源码位于 `static/app/`，直接以浏览器原生 ES Modules 运行，没有 bundle 生成步骤。
+
+## 题目材料
+
+公开仓库只提交可公开的 demo case。私有比赛题、隐藏答案、真实云主机、kubeconfig、API key、
+SSH key、数据库、截图和运行状态不要提交到公开仓库。
+
+提交前请运行测试，并检查 `git status` 与 `git diff`。

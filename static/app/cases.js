@@ -1,27 +1,19 @@
-(function () {
-  const OJApp = window.OJApp;
-  const {
-    state,
-    escapeHtml,
-    routeTo,
-    compactTime,
-    readSubmissionDraft,
-    writeSubmissionDraft,
-    clearSubmissionDraft,
-    caseOrderText,
-    copyIconButton,
-    bindCopyButtons,
-    currentSkills,
-    renderSkillManagerSection,
-    bindSkillManager,
-    currentSoulMarkdown,
-    renderSoulEditorSection,
-    bindSoulEditor,
-    showNotice,
-    refreshSubmissions,
-    refreshTestSets,
-    api,
-  } = OJApp;
+import { api } from "./api.js";
+import { bindCopyButtons, copyIconButton } from "./copy.js";
+import { refreshSubmissions, refreshTestSets } from "./data.js";
+import { showNotice } from "./notice.js";
+import { routeTo } from "./router.js";
+import { currentSkills, renderSkillManagerSection, bindSkillManager } from "./skills.js";
+import { currentSoulMarkdown, renderSoulEditorSection, bindSoulEditor } from "./soul.js";
+import { state } from "./state.js";
+import {
+  caseOrderText,
+  clearSubmissionDraft,
+  compactTime,
+  escapeHtml,
+  readSubmissionDraft,
+  writeSubmissionDraft,
+} from "./utils.js";
 
   const TEST_SET_PLACEHOLDER_HELP_TEXT = "成员题面现已公开；Prompt 中仍可使用 {{fault_phenomenon}} 表示每道题的故障现象，使用 {{public_case_info}} 表示每道题的公开信息。生成真实提交时，平台会分别替换为对应题目的内容。";
   const TEST_SET_PLACEHOLDER_HELP_HTML = "成员题面现已公开；Prompt 中仍可使用 <code>{{fault_phenomenon}}</code> 表示每道题的故障现象，使用 <code>{{public_case_info}}</code> 表示每道题的公开信息。生成真实提交时，平台会分别替换为对应题目的内容。";
@@ -101,6 +93,16 @@
     `;
   }
 
+  function hasPersonalBestScore(item) {
+    return item?.personal_best_score != null && item?.personal_best_score !== "";
+  }
+
+  function renderPersonalBestScore(item) {
+    return hasPersonalBestScore(item)
+      ? `<span class="case-best-score">最高分 ${escapeHtml(item.personal_best_score)}</span>`
+      : "";
+  }
+
   function availableMcpServers() {
     const items = Array.isArray(state.config?.available_mcp_servers) ? state.config.available_mcp_servers : [];
     return items
@@ -138,6 +140,37 @@
               </span>
             </label>
           `).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function testSetMcpServers(item) {
+    const selected = Array.isArray(item?.mcp_servers) ? item.mcp_servers : [];
+    if (selected.length) return selected;
+    return availableMcpServers().map((entry) => entry.id);
+  }
+
+  function mcpLabelById(serverId) {
+    const match = availableMcpServers().find((item) => item.id === serverId);
+    return match?.label || serverId;
+  }
+
+  function renderTestSetMcpReadOnlySection(testSet) {
+    const selected = testSetMcpServers(testSet);
+    return `
+      <section class="panel form-panel">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">MCP</span>
+            <h3>测试集统一 MCP</h3>
+          </div>
+        </div>
+        <p class="muted">本测试集提交时会自动附带管理员配置的 MCP，选手无需选择。</p>
+        <div class="test-set-case-numbers">
+          ${selected.length
+            ? selected.map((serverId) => `<code>${escapeHtml(mcpLabelById(serverId))}</code>`).join("")
+            : `<span>未选择 MCP</span>`}
         </div>
       </section>
     `;
@@ -330,6 +363,7 @@
                 </div>
                 <div class="case-list-title-wrap">
                   <h3>${escapeHtml(item.name || item.id)}</h3>
+                  ${renderPersonalBestScore(item)}
                 </div>
                 ${renderTestSetMembers(item)}
               </div>
@@ -348,7 +382,13 @@
     view.querySelectorAll("[data-case-route]").forEach((el) => {
       el.addEventListener("click", () => routeTo(el.dataset.caseRoute));
     });
-    refreshTestSets?.({ rerender: false }).catch((error) => showNotice(error.message, "error"));
+    const beforeScores = JSON.stringify(items.map((item) => [item.id, item.personal_best_score ?? null]));
+    refreshTestSets?.({ rerender: false }).then(() => {
+      if (state.route?.name !== "testSets") return;
+      const nextItems = Array.isArray(state.testSets) ? state.testSets : [];
+      const afterScores = JSON.stringify(nextItems.map((item) => [item.id, item.personal_best_score ?? null]));
+      if (beforeScores !== afterScores) renderTestSets();
+    }).catch((error) => showNotice(error.message, "error"));
   }
 
   function renderCaseDetail(caseId) {
@@ -528,7 +568,7 @@
           rows: 14,
         })}
 
-        ${renderMcpSelectionSection()}
+        ${renderTestSetMcpReadOnlySection(testSet)}
 
         ${renderSkillManagerSection({
           idPrefix: "submission",
@@ -674,7 +714,7 @@
         });
         clearSubmissionDraft(caseItem.id);
         updateDraftHint("");
-        await refreshSubmissions();
+        refreshSubmissions().catch(() => {});
         routeTo(`/submissions/${data.id}`);
       } catch (error) {
         showNotice(error.message, "error");
@@ -711,31 +751,19 @@
     const defaultSelectedIds = draft.selected_skill_ids?.length
       ? draft.selected_skill_ids
       : currentSkills(state.profile).map((skill) => skill.id);
-    const defaultMcpIds = draft.has_selected_mcp_servers
-      ? draft.selected_mcp_servers
-      : availableMcpServers().map((item) => item.id);
     let skillManager = null;
     let soulEditor = null;
-
-    const selectedMcpServers = () => Array.from(
-      formEl.querySelectorAll("input[name='mcp_server_ids']:checked"),
-    ).map((input) => String(input.value || "").trim()).filter(Boolean);
 
     const saveDraft = () => {
       const savedAt = writeSubmissionDraft(draftKey, {
         prompt: promptInput?.value || "",
         selected_skill_ids: skillManager ? skillManager.getSelectedIds() : defaultSelectedIds,
-        selected_mcp_servers: selectedMcpServers(),
         soul_md: soulEditor ? soulEditor.readValue() : currentSoulMarkdown(state.profile),
       });
       updateDraftHint(savedAt);
     };
 
     if (promptInput && draft.prompt) promptInput.value = draft.prompt;
-    formEl.querySelectorAll("input[name='mcp_server_ids']").forEach((input) => {
-      input.checked = defaultMcpIds.includes(String(input.value || "").trim());
-      input.addEventListener("change", saveDraft);
-    });
     updateDraftHint(draft.saved_at);
 
     soulEditor = bindSoulEditor({
@@ -793,13 +821,14 @@
           method: "POST",
           body: JSON.stringify({
             prompt: form.get("prompt"),
-            mcp_servers: selectedMcpServers(),
             skill_ids: skillManager ? skillManager.getSelectedIds() : [],
           }),
         });
         clearSubmissionDraft(draftKey);
-        await refreshSubmissions({ resetPage: true, clearItems: true });
+        refreshTestSets?.({ rerender: false }).catch(() => {});
         showNotice("测试题目已加入队列", "success");
+        state.submissionView.page = 1;
+        state.submissions = [];
         routeTo("/submissions");
       } catch (error) {
         showNotice(error.message, "error");
@@ -837,7 +866,8 @@
         <div>
           <span class="eyebrow">Test Set</span>
           <h2>${escapeHtml(testSet.name || testSet.id)}</h2>
-          <p>提交后会生成该测试题目下的独立测评记录，你可以查看自己每条提交的完整过程和 AI 分析。${TEST_SET_PLACEHOLDER_HELP_TEXT}</p>
+          ${renderPersonalBestScore(testSet)}
+          <p>提交后会生成该测试题目下的独立测评记录，你可以查看自己每条提交的完整过程；AI 分析按题目配置显示。${TEST_SET_PLACEHOLDER_HELP_TEXT}</p>
         </div>
       </section>
       ${renderTestSetSubmissionForm(testSet)}
@@ -845,24 +875,23 @@
     bindTestSetSubmissionForm(view, testSet);
   }
 
-  Object.assign(OJApp, {
-    caseById,
-    isTrainingCase,
-    testSetById,
-    caseAvailabilityClass,
-    caseStateBadges,
-    renderCaseStateBadges,
-    caseStateSummaryText,
-    renderSidebarCaseSummary,
-    renderCasesList,
-    renderTestSets,
-    renderCaseDetail,
-    loadCaseDetail,
-    renderSubmissionForm,
-    bindSubmissionForm,
-    bindTestSetSubmissionForm,
-    bindCasePageActions,
-    renderSubmit,
-    renderTestSetSubmit,
-  });
-})();
+export {
+  caseById,
+  isTrainingCase,
+  testSetById,
+  caseAvailabilityClass,
+  caseStateBadges,
+  renderCaseStateBadges,
+  caseStateSummaryText,
+  renderSidebarCaseSummary,
+  renderCasesList,
+  renderTestSets,
+  renderCaseDetail,
+  loadCaseDetail,
+  renderSubmissionForm,
+  bindSubmissionForm,
+  bindTestSetSubmissionForm,
+  bindCasePageActions,
+  renderSubmit,
+  renderTestSetSubmit,
+};

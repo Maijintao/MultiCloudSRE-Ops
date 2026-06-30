@@ -109,6 +109,8 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_submissions_case_created_id ON submissions(case_id, created_at, id);
             CREATE INDEX IF NOT EXISTS idx_submissions_source_display_created_id
                 ON submissions(source_kind, display_case_name, created_at, id);
+            CREATE INDEX IF NOT EXISTS idx_submissions_test_set_group_user_status
+                ON submissions(source_kind, test_set_id, submission_group_id, user_id, status, case_id);
             """
         )
         for table, column, ddl in (
@@ -147,6 +149,10 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_submissions_source_display_created_id "
             "ON submissions(source_kind, display_case_name, created_at, id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_submissions_test_set_group_user_status "
+            "ON submissions(source_kind, test_set_id, submission_group_id, user_id, status, case_id)"
         )
 
         protected_admin = conn.execute(

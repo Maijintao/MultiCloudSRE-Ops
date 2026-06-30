@@ -1,6 +1,7 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state, escapeHtml, showNotice, api, syncSubmissionDraftSouls } = OJApp;
+import { api } from "./api.js";
+import { showNotice } from "./notice.js";
+import { state } from "./state.js";
+import { escapeHtml, syncSubmissionDraftSouls } from "./utils.js";
 
   function currentSoulMarkdown(profile = state.profile) {
     return typeof profile?.soul_md === "string" ? profile.soul_md : "";
@@ -156,9 +157,8 @@
     };
   }
 
-  Object.assign(OJApp, {
-    currentSoulMarkdown,
-    renderSoulEditorSection,
-    bindSoulEditor,
-  });
-})();
+export {
+  currentSoulMarkdown,
+  renderSoulEditorSection,
+  bindSoulEditor,
+};

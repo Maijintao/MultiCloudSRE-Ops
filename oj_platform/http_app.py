@@ -1,7 +1,9 @@
+import hashlib
 import json
 import mimetypes
 import re
 import sqlite3
+from email.utils import formatdate, parsedate_to_datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
@@ -26,6 +28,7 @@ from .cases import (
     update_public_content,
     update_test_set,
     update_test_set_flags,
+    update_test_set_mcp_servers,
 )
 from .hermes_runner import agent_status
 from .model_config import (
@@ -33,6 +36,7 @@ from .model_config import (
     check_model_available,
     model_check_fields,
     public_grader_config,
+    update_platform_grader_config,
     update_user_grader_config,
     update_user_profile,
 )
@@ -44,6 +48,7 @@ from .submissions import (
     get_submission,
     hidden_case_leaderboard,
     list_submissions,
+    personal_best_scores_by_test_set,
     personal_best_scores_by_case,
     queue_position,
     retry_submission,
@@ -77,6 +82,140 @@ def json_response(handler, payload, status=HTTPStatus.OK):
     handler.end_headers()
     handler.wfile.write(body)
 
+
+def static_cache_control(path, target):
+    if target.name == "index.html":
+        return "no-store"
+    if path.startswith("/static/") and target.suffix in {".js", ".css"}:
+        return "public, max-age=300, stale-while-revalidate=600"
+    return "no-store"
+
+
+def static_file_etag(stat_result):
+    return f'"{stat_result.st_mtime_ns:x}-{stat_result.st_size:x}"'
+
+
+def http_date(timestamp):
+    return formatdate(timestamp, usegmt=True)
+
+
+def request_matches_static_cache(handler, etag, modified_at):
+    if_none_match = handler.headers.get("If-None-Match", "")
+    if if_none_match:
+        candidates = {item.strip() for item in if_none_match.split(",")}
+        if "*" in candidates or etag in candidates:
+            return True
+    if_modified_since = handler.headers.get("If-Modified-Since")
+    if not if_modified_since:
+        return False
+    try:
+        requested_time = parsedate_to_datetime(if_modified_since)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return False
+    try:
+        return requested_time.timestamp() >= int(modified_at)
+    except (OSError, OverflowError, ValueError):
+        return False
+
+
+def static_cache_asset_paths():
+    paths = []
+    styles = settings.STATIC_DIR / "styles.css"
+    if styles.exists():
+        paths.append(styles)
+    app_dir = settings.STATIC_DIR / "app"
+    if app_dir.exists():
+        paths.extend(sorted(app_dir.glob("*.js")))
+    return [path for path in paths if path.is_file()]
+
+
+def static_cache_asset_url(path):
+    return "/" + path.relative_to(settings.ROOT).as_posix()
+
+
+def static_cache_version(asset_paths):
+    digest = hashlib.sha256()
+    for path in asset_paths:
+        digest.update(static_cache_asset_url(path).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()[:16]
+
+
+def service_worker_script():
+    asset_paths = static_cache_asset_paths()
+    asset_urls = [static_cache_asset_url(path) for path in asset_paths]
+    version = static_cache_version(asset_paths)
+    return f"""
+const CACHE_PREFIX = "oj-static-";
+const CACHE_NAME = `${{CACHE_PREFIX}}{version}`;
+const STATIC_ASSETS = new Set({json.dumps(asset_urls, ensure_ascii=False)});
+
+async function warmStaticCache() {{
+  const cache = await caches.open(CACHE_NAME);
+  for (const asset of STATIC_ASSETS) {{
+    try {{
+      const response = await fetch(new Request(asset, {{ cache: "reload" }}));
+      if (response && response.ok) {{
+        await cache.put(asset, response.clone());
+      }}
+    }} catch (error) {{
+      // A transient static request must not make the whole worker install fail.
+    }}
+  }}
+}}
+
+async function matchStaticCache(request) {{
+  const current = await caches.open(CACHE_NAME);
+  const currentHit = await current.match(request);
+  if (currentHit) return currentHit;
+  const keys = await caches.keys();
+  for (const key of keys) {{
+    if (!key.startsWith(CACHE_PREFIX) || key === CACHE_NAME) continue;
+    const cache = await caches.open(key);
+    const hit = await cache.match(request);
+    if (hit) return hit;
+  }}
+  return null;
+}}
+
+self.addEventListener("install", (event) => {{
+  event.waitUntil(warmStaticCache().finally(() => self.skipWaiting()));
+}});
+
+self.addEventListener("activate", (event) => {{
+  event.waitUntil(self.clients.claim());
+}});
+
+self.addEventListener("fetch", (event) => {{
+  const url = new URL(event.request.url);
+  if (
+    event.request.method !== "GET" ||
+    url.origin !== self.location.origin ||
+    !STATIC_ASSETS.has(url.pathname)
+  ) {{
+    return;
+  }}
+
+  event.respondWith(
+    (async () => {{
+      const cached = await matchStaticCache(event.request);
+      try {{
+        const response = await fetch(event.request);
+        if (response && response.ok) {{
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(event.request, response.clone());
+        }}
+        return response;
+      }} catch (error) {{
+        if (cached) return cached;
+        throw error;
+      }}
+    }})()
+  );
+}});
+""".lstrip()
 
 def read_request_json(handler):
     length = int(handler.headers.get("Content-Length", "0") or "0")
@@ -129,6 +268,17 @@ def public_cases_for_user(user):
     return payload
 
 
+def public_test_sets_for_user(user):
+    best_scores = personal_best_scores_by_test_set(user["id"])
+    payload = []
+    for item in public_test_sets():
+        item = dict(item)
+        if item.get("id") in best_scores:
+            item["personal_best_score"] = best_scores[item["id"]]
+        payload.append(item)
+    return payload
+
+
 def stream_submission_detail(handler, submission_id, user):
     item = get_submission(submission_id, user)
     if item == "forbidden":
@@ -172,6 +322,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/health":
             json_response(self, {"ok": True, "time": utc_now(), "agent": agent_status()})
             return
+        if path == "/service-worker.js":
+            self.serve_service_worker()
+            return
         if path == "/api/me":
             user = require_user(self)
             if user:
@@ -196,6 +349,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "user": session_user,
                         "profile": profile,
                         "config": public_config(),
+                        "test_sets": public_test_sets_for_user(user),
                         "cases": public_cases_for_user(user),
                     },
                 )
@@ -210,8 +364,9 @@ class Handler(SimpleHTTPRequestHandler):
                 json_response(self, {"cases": public_cases_for_user(user)})
             return
         if path == "/api/test-sets":
-            if require_user(self):
-                json_response(self, {"test_sets": public_test_sets()})
+            user = require_user(self)
+            if user:
+                json_response(self, {"test_sets": public_test_sets_for_user(user)})
             return
         if path == "/api/leaderboard":
             user = require_user(self)
@@ -246,6 +401,7 @@ class Handler(SimpleHTTPRequestHandler):
                         username=query.get("username", [""])[0],
                         case_id=query.get("case_id", [""])[0],
                         display_case_name=query.get("display_case_name", [""])[0],
+                        test_set_id=query.get("test_set_id", [""])[0],
                         sort_by=query.get("sort_by", ["created_at"])[0],
                         sort_order=query.get("sort_order", ["desc"])[0],
                         page=query.get("page", ["1"])[0],
@@ -551,7 +707,15 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/admin/grader-config/check":
-            json_response(self, {"ok": False, "message": "grader config moved to personal profile"}, HTTPStatus.GONE)
+            user = require_admin(self)
+            if not user:
+                return
+            try:
+                result = check_grader_profile_available(payload, get_user_profile(user["id"]))
+            except Exception as exc:
+                json_response(self, {"ok": False, "message": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            json_response(self, result)
             return
 
         json_response(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
@@ -617,7 +781,15 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/admin/grader-config":
-            json_response(self, {"error": "grader config moved to personal profile"}, HTTPStatus.GONE)
+            user = require_admin(self)
+            if not user:
+                return
+            try:
+                update_platform_grader_config(payload)
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            json_response(self, {"grader": public_grader_config(get_user_profile(user["id"]))})
             return
 
         if not require_admin(self):
@@ -639,6 +811,15 @@ class Handler(SimpleHTTPRequestHandler):
         if admin_test_set_flags_match:
             try:
                 json_response(self, update_test_set_flags(admin_test_set_flags_match.group(1), payload))
+            except LookupError as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.NOT_FOUND)
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        admin_test_set_mcp_match = re.fullmatch(r"/api/admin/test-sets/([^/]+)/mcp-servers", path)
+        if admin_test_set_mcp_match:
+            try:
+                json_response(self, update_test_set_mcp_servers(admin_test_set_mcp_match.group(1), payload))
             except LookupError as exc:
                 json_response(self, {"error": str(exc)}, HTTPStatus.NOT_FOUND)
             except Exception as exc:
@@ -741,6 +922,17 @@ class Handler(SimpleHTTPRequestHandler):
 
         json_response(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
 
+    def serve_service_worker(self):
+        body = service_worker_script().encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Service-Worker-Allowed", "/")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def serve_static(self, path):
         if path == "/":
             target = settings.STATIC_DIR / "index.html"
@@ -756,13 +948,32 @@ class Handler(SimpleHTTPRequestHandler):
         if not target.exists() or not target.is_file():
             json_response(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
             return
+        stat_result = target.stat()
+        cache_control = static_cache_control(path, target)
+        cache_revalidation_enabled = cache_control != "no-store"
+        etag = static_file_etag(stat_result) if cache_revalidation_enabled else ""
+        last_modified = http_date(stat_result.st_mtime) if cache_revalidation_enabled else ""
+        if cache_revalidation_enabled and request_matches_static_cache(self, etag, stat_result.st_mtime):
+            self.send_response(HTTPStatus.NOT_MODIFIED)
+            self.send_header("Cache-Control", cache_control)
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", last_modified)
+            if target.suffix in {".js", ".css"}:
+                self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return
         content_type = mimetypes.guess_type(str(target))[0] or "text/plain"
         if content_type.startswith("text/") or target.suffix in {".js", ".css"}:
             content_type += "; charset=utf-8"
         body = target.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
+        if cache_revalidation_enabled:
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", last_modified)
+        if target.suffix in {".js", ".css"}:
+            self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

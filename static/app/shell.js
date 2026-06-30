@@ -1,6 +1,12 @@
-(function () {
-  const OJApp = window.OJApp;
-  const { state, app, escapeHtml, routeTo, parseRoute, compactTime } = OJApp;
+import { renderAdmin, renderAdminCaseCreator, renderAdminCaseEditor } from "./admin.js";
+import { renderCaseDetail, renderCasesList, renderSubmit, renderTestSets, renderTestSetSubmit } from "./cases.js";
+import { emit } from "./events.js";
+import { renderOverview } from "./overview.js";
+import { renderProfile } from "./profile.js";
+import { parseRoute, routeTo, captureSidebarScroll } from "./router.js";
+import { app, state } from "./state.js";
+import { closeDetailStream, renderSubmissionDetail, renderSubmissions } from "./submissions.js";
+import { compactTime, escapeHtml } from "./utils.js";
 
   function navButton(label, routeName, path) {
     const active = state.route.name === routeName || (
@@ -49,7 +55,7 @@
         <div class="sidebar-board-head">
           <div>
             <div class="sidebar-label">排行榜</div>
-            <p class="sidebar-board-note">按当前 AI 分析隐藏题目和所有测试集成员题的最好成绩求和</p>
+            <p class="sidebar-board-note">按当前测试集整组提交的最高总分求和</p>
           </div>
           <span class="sidebar-board-count">${escapeHtml(leaderboardCaseCount)} 题</span>
         </div>
@@ -66,13 +72,13 @@
               </div>
             `).join("")}
           </div>
-        ` : `<p class="leaderboard-empty">还没有隐藏题成绩进入排行榜。</p>`}
+        ` : `<p class="leaderboard-empty">还没有测试集成绩进入排行榜。</p>`}
       </div>
     `;
   }
 
   function renderShell() {
-    OJApp.captureSidebarScroll?.();
+    captureSidebarScroll();
     state.route = parseRoute();
     const stats = sidebarStats();
     app.innerHTML = `
@@ -128,7 +134,7 @@
     document.querySelectorAll("[data-route]").forEach((button) => {
       button.addEventListener("click", () => routeTo(button.dataset.route));
     });
-    document.getElementById("logoutBtn").addEventListener("click", () => OJApp.logout?.());
+    document.getElementById("logoutBtn").addEventListener("click", () => emit("auth:logout"));
     const sidebar = app.querySelector(".sidebar");
     if (sidebar && state.sidebarScrollTop > 0) {
       requestAnimationFrame(() => {
@@ -146,19 +152,19 @@
   function renderCurrentView() {
     const mainView = document.getElementById("mainView");
     if (mainView) mainView.onclick = null;
-    if (state.route.name !== "submission" && typeof OJApp.closeDetailStream === "function") OJApp.closeDetailStream();
-    if (state.route.name === "overview") OJApp.renderOverview?.();
-    else if (state.route.name === "cases") OJApp.renderCasesList?.();
-    else if (state.route.name === "testSets") OJApp.renderTestSets?.();
-    else if (state.route.name === "case") OJApp.renderCaseDetail?.(state.route.params.id);
-    else if (state.route.name === "submit") OJApp.renderSubmit?.(state.route.params.id);
-    else if (state.route.name === "testSetSubmit") OJApp.renderTestSetSubmit?.(state.route.params.id);
-    else if (state.route.name === "submissions") OJApp.renderSubmissions?.();
-    else if (state.route.name === "submission") OJApp.renderSubmissionDetail?.(state.route.params.id);
-    else if (state.route.name === "profile") OJApp.renderProfile?.();
-    else if (state.route.name === "admin") OJApp.renderAdmin?.();
-    else if (state.route.name === "adminCase") OJApp.renderAdminCaseEditor?.(state.route.params.id);
-    else if (state.route.name === "adminCaseNew") OJApp.renderAdminCaseCreator?.();
+    if (state.route.name !== "submission") closeDetailStream();
+    if (state.route.name === "overview") renderOverview();
+    else if (state.route.name === "cases") renderCasesList();
+    else if (state.route.name === "testSets") renderTestSets();
+    else if (state.route.name === "case") renderCaseDetail(state.route.params.id);
+    else if (state.route.name === "submit") renderSubmit(state.route.params.id);
+    else if (state.route.name === "testSetSubmit") renderTestSetSubmit(state.route.params.id);
+    else if (state.route.name === "submissions") renderSubmissions();
+    else if (state.route.name === "submission") renderSubmissionDetail(state.route.params.id);
+    else if (state.route.name === "profile") renderProfile();
+    else if (state.route.name === "admin") renderAdmin();
+    else if (state.route.name === "adminCase") renderAdminCaseEditor(state.route.params.id);
+    else if (state.route.name === "adminCaseNew") renderAdminCaseCreator();
   }
 
   function renderSidebarLeaderboard() {
@@ -166,5 +172,4 @@
     if (slot) slot.innerHTML = renderLeaderboardSection();
   }
 
-  Object.assign(OJApp, { navButton, sidebarStats, renderLeaderboardSection, renderShell, renderCurrentView, renderSidebarLeaderboard });
-})();
+export { navButton, sidebarStats, renderLeaderboardSection, renderShell, renderCurrentView, renderSidebarLeaderboard };

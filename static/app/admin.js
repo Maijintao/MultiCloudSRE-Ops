@@ -1,19 +1,15 @@
-(function () {
-  const OJApp = window.OJApp;
-  const {
-    state,
-    escapeHtml,
-    routeTo,
-    showNotice,
-    api,
-    compactTime,
-    caseOrderText,
-    confirmTwice,
-    refreshLeaderboard,
-  } = OJApp;
+import { api } from "./api.js";
+import { refreshLeaderboard } from "./data.js";
+import { emit } from "./events.js";
+import { showNotice } from "./notice.js";
+import { routeTo } from "./router.js";
+import { state } from "./state.js";
+import { caseOrderText, compactTime, confirmTwice, escapeHtml } from "./utils.js";
 
   const ADMIN_TABS = [
     { key: "cases", label: "题目管理", eyebrow: "Cases", description: "批量管理题目开关、顺序和编辑入口" },
+    { key: "testSets", label: "测试集", eyebrow: "Test Sets", description: "管理测试集、提交开关和统一 MCP" },
+    { key: "grader", label: "评分 API", eyebrow: "Grader", description: "统一配置选手提交使用的评分接口" },
     { key: "public", label: "公开内容", eyebrow: "Public", description: "维护公告、测试流程和 output.md" },
     { key: "users", label: "用户", eyebrow: "Users", description: "创建账号、修改角色和删除用户" },
     { key: "runtime", label: "运行状态", eyebrow: "Runtime", description: "查看 Agent 和评分链路当前状态" },
@@ -36,6 +32,10 @@
     viewState.agentLoadedAt = Number(viewState.agentLoadedAt) || 0;
     viewState.agentLoadingPromise = viewState.agentLoadingPromise || null;
     viewState.agentError = viewState.agentError || "";
+    viewState.graderConfig = viewState.graderConfig || null;
+    viewState.graderLoadedAt = Number(viewState.graderLoadedAt) || 0;
+    viewState.graderLoadingPromise = viewState.graderLoadingPromise || null;
+    viewState.graderError = viewState.graderError || "";
     return viewState;
   }
 
@@ -85,6 +85,13 @@
         showNotice(error.message, "error");
       }
     }
+    if (tabKey === "grader") {
+      try {
+        await ensureAdminGraderConfig();
+      } catch (error) {
+        showNotice(error.message, "error");
+      }
+    }
   }
 
   function adminSetCasePage(pageValue) {
@@ -113,6 +120,14 @@
   async function adminRefreshRuntime() {
     try {
       await ensureAdminAgentStatus(true);
+    } catch (error) {
+      showNotice(error.message, "error");
+    }
+  }
+
+  async function adminRefreshGraderConfig() {
+    try {
+      await ensureAdminGraderConfig(true);
     } catch (error) {
       showNotice(error.message, "error");
     }
@@ -402,16 +417,66 @@
     return "queued";
   }
 
+  function availableMcpServers() {
+    const items = Array.isArray(state.config?.available_mcp_servers) ? state.config.available_mcp_servers : [];
+    return items
+      .map((item) => ({
+        id: String(item?.id || "").trim(),
+        label: String(item?.label || item?.id || "").trim(),
+      }))
+      .filter((item, index, list) => item.id && list.findIndex((entry) => entry.id === item.id) === index);
+  }
+
+  function testSetMcpServers(item) {
+    const selected = Array.isArray(item?.mcp_servers) ? item.mcp_servers : [];
+    if (selected.length) return selected;
+    return availableMcpServers().map((entry) => entry.id);
+  }
+
+  function mcpLabelById(serverId) {
+    const match = availableMcpServers().find((item) => item.id === serverId);
+    return match?.label || serverId;
+  }
+
+  function renderTestSetMcpSummary(item) {
+    const selected = testSetMcpServers(item);
+    if (!selected.length) return "未选择 MCP";
+    return selected.map((serverId) => mcpLabelById(serverId)).join("、");
+  }
+
+  function renderTestSetMcpPicker(item) {
+    const options = availableMcpServers();
+    const selected = testSetMcpServers(item);
+    if (!options.length) return `<section class="empty compact-empty">当前没有可用 MCP 配置项</section>`;
+    return `
+      <div class="admin-test-set-mcp-picker" data-admin-test-set-mcp-group="${escapeHtml(item.id)}">
+        ${options.map((option) => `
+          <label class="admin-test-set-mcp-chip" title="${escapeHtml(option.id)}">
+            <input
+              type="checkbox"
+              name="test_set_mcp_${escapeHtml(item.id)}"
+              value="${escapeHtml(option.id)}"
+              ${selected.includes(option.id) ? "checked" : ""}
+            />
+            <span>${escapeHtml(option.label)}</span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+  }
+
   function renderAdminTestSetManager() {
     const testSets = Array.isArray(state.testSets) ? state.testSets : [];
     return `
-      <section class="admin-test-set-manager">
+      <section class="panel admin-section-panel admin-test-set-manager">
         <div class="section-head">
           <div>
             <span class="eyebrow">Test Sets</span>
-            <h4>测试集提交控制</h4>
+            <h3>测试集管理</h3>
           </div>
+          <button type="button" class="ghost" id="adminCreateTestSetBtn">增加测试集</button>
         </div>
+        <p class="muted">测试集提交时使用这里配置的 MCP，选手提交页不再提供 MCP 选择。新建测试集默认启用全部 MCP。</p>
         <div class="admin-test-set-results">
           ${testSets.length ? testSets.map((item) => {
             const enabled = item?.submission_enabled !== false;
@@ -433,9 +498,14 @@
                       ? caseNumbers.map((number) => `<code>#${escapeHtml(number)}</code>`).join("")
                       : `<span>暂无题目</span>`}
                   </div>
+                  <div class="test-set-case-numbers">
+                    <span>提交 MCP</span>
+                    <small>${escapeHtml(renderTestSetMcpSummary(item))}</small>
+                  </div>
+                  ${renderTestSetMcpPicker(item)}
                 </div>
                 <div class="admin-test-set-actions">
-                  <button type="button" class="ghost slim" data-admin-save-test-set="${escapeHtml(item.id)}">保存名称</button>
+                  <button type="button" class="primary slim" data-admin-save-test-set="${escapeHtml(item.id)}">\u4fdd\u5b58</button>
                   <button type="button" class="ghost slim" data-admin-toggle-test-set-submit="${escapeHtml(item.id)}">${enabled ? "关闭提交" : "开放提交"}</button>
                   <button type="button" class="ghost slim danger" data-admin-delete-test-set="${escapeHtml(item.id)}">删除</button>
                 </div>
@@ -497,7 +567,6 @@
         type="button"
         class="admin-tab-button ${active ? "active" : ""}"
         data-admin-tab="${escapeHtml(tab.key)}"
-        onclick="window.OJApp.adminSetTab('${escapeHtml(tab.key)}')"
       >
         <span>${escapeHtml(tab.eyebrow)}</span>
         <strong>${escapeHtml(tab.label)}</strong>
@@ -583,14 +652,12 @@
           </div>
           <div class="submit-actions">
             <input type="file" id="adminCaseArchiveInput" accept=".zip,application/zip" hidden />
-            <button type="button" class="ghost" id="adminCreateTestSetBtn">增加测试集</button>
             <button type="button" class="ghost" id="adminCaseArchiveBtn">上传 ZIP 出题</button>
             <button type="button" class="primary" data-route="/admin/cases/new">新建题目</button>
           </div>
         </div>
         <p class="muted">默认只展示这一块，避免管理页一打开就把用户、状态和大文本编辑器全部一起加载。ZIP 出题上限 ${escapeHtml(maxCaseArchiveText)}。</p>
         ${renderAdminMetricsStrip()}
-        ${renderAdminTestSetManager()}
         <div class="admin-case-toolbar">
           <label class="admin-search-field">
             <span>筛选题目</span>
@@ -613,10 +680,10 @@
         <div class="submission-pagination">
           <div class="submission-pagination-info">第 ${escapeHtml(pageData.page)} / ${escapeHtml(pageData.totalPages)} 页</div>
           <div class="submit-actions submission-pagination-actions">
-            <button type="button" class="ghost slim" data-admin-case-page="1" onclick="window.OJApp.adminSetCasePage(1)" ${pageData.page <= 1 ? "disabled" : ""}>首页</button>
-            <button type="button" class="ghost slim" data-admin-case-page="${Math.max(1, pageData.page - 1)}" onclick="window.OJApp.adminSetCasePage(${Math.max(1, pageData.page - 1)})" ${pageData.page <= 1 ? "disabled" : ""}>上一页</button>
-            <button type="button" class="ghost slim" data-admin-case-page="${Math.min(pageData.totalPages, pageData.page + 1)}" onclick="window.OJApp.adminSetCasePage(${Math.min(pageData.totalPages, pageData.page + 1)})" ${pageData.page >= pageData.totalPages ? "disabled" : ""}>下一页</button>
-            <button type="button" class="ghost slim" data-admin-case-page="${pageData.totalPages}" onclick="window.OJApp.adminSetCasePage(${pageData.totalPages})" ${pageData.page >= pageData.totalPages ? "disabled" : ""}>末页</button>
+            <button type="button" class="ghost slim" data-admin-case-page="1" ${pageData.page <= 1 ? "disabled" : ""}>首页</button>
+            <button type="button" class="ghost slim" data-admin-case-page="${Math.max(1, pageData.page - 1)}" ${pageData.page <= 1 ? "disabled" : ""}>上一页</button>
+            <button type="button" class="ghost slim" data-admin-case-page="${Math.min(pageData.totalPages, pageData.page + 1)}" ${pageData.page >= pageData.totalPages ? "disabled" : ""}>下一页</button>
+            <button type="button" class="ghost slim" data-admin-case-page="${pageData.totalPages}" ${pageData.page >= pageData.totalPages ? "disabled" : ""}>末页</button>
           </div>
         </div>
       </section>
@@ -743,7 +810,7 @@
               <span class="eyebrow">Users</span>
               <h3>用户列表</h3>
             </div>
-            <button type="button" class="ghost" data-admin-refresh-users onclick="window.OJApp.adminRefreshUsers()">刷新用户</button>
+            <button type="button" class="ghost" data-admin-refresh-users>刷新用户</button>
           </div>
           ${usersLoading ? `<section class="empty compact-empty">正在加载用户列表...</section>` : ""}
           ${!usersLoading && usersError ? `<section class="notice error always">${escapeHtml(usersError)}</section>` : ""}
@@ -751,6 +818,52 @@
           ${!usersLoading && !usersError && !usersLoaded ? `<section class="empty compact-empty">首次打开这个标签页时才会加载用户列表。</section>` : ""}
         </article>
       </section>
+    `;
+  }
+
+  function renderAdminGraderPanel() {
+    const viewState = adminViewState();
+    const loading = !!viewState.graderLoadingPromise;
+    const loaded = !!viewState.graderLoadedAt;
+    const error = viewState.graderError;
+    const grader = viewState.graderConfig || {};
+    const configured = !!grader.configured;
+    return `
+      <form id="adminGraderForm" class="panel form-panel admin-section-panel">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">Scoring API</span>
+            <h3>评分 API 配置</h3>
+          </div>
+          <span class="status ${configured ? "ok" : "bad"}">${configured ? "已配置" : "未配置"}</span>
+        </div>
+        <p class="muted">这里配置的平台评分接口会被所有选手的新提交统一使用。API Key 留空表示保持当前密钥。</p>
+        ${loading ? `<section class="empty compact-empty">正在加载评分 API 配置...</section>` : ""}
+        ${!loading && error ? `<section class="notice error always">${escapeHtml(error)}</section>` : ""}
+        <label>
+          <span>Base URL</span>
+          <input name="base_url" placeholder="https://api.example.com/v1" value="${escapeHtml(grader.api_base_url || "")}" ${loaded ? "" : "disabled"} required />
+        </label>
+        <label>
+          <span>Model</span>
+          <input name="model" placeholder="gpt-4o-mini" value="${escapeHtml(grader.model || "")}" ${loaded ? "" : "disabled"} required />
+        </label>
+        <label>
+          <span>API Key</span>
+          <input name="api_key" type="password" autocomplete="off" placeholder="${configured ? `留空保持当前密钥（${escapeHtml(grader.api_key_mask || "已配置")}）` : "请输入 API Key"}" ${loaded ? "" : "disabled"} ${configured ? "" : "required"} />
+        </label>
+        <dl class="kv compact-kv">
+          <dt>来源</dt><dd>${escapeHtml(grader.label || "平台统一评分 API")}</dd>
+          <dt>当前 Key</dt><dd>${escapeHtml(grader.api_key_mask || "-")}</dd>
+          <dt>状态</dt><dd>${escapeHtml(configured ? "可用于新提交" : "不可用")}</dd>
+        </dl>
+        <div class="submit-actions">
+          <button type="button" class="ghost" data-admin-refresh-grader>刷新配置</button>
+          <button type="button" class="ghost" id="adminCheckGraderBtn" ${loaded ? "" : "disabled"}>检查模型</button>
+          <button type="submit" class="primary" ${loaded ? "" : "disabled"}>保存评分 API</button>
+        </div>
+        <p id="adminGraderMessage" class="form-message"></p>
+      </form>
     `;
   }
 
@@ -766,7 +879,7 @@
             <span class="eyebrow">Runtime</span>
             <h3>运行状态</h3>
           </div>
-          <button type="button" class="ghost" data-admin-refresh-runtime onclick="window.OJApp.adminRefreshRuntime()">刷新状态</button>
+          <button type="button" class="ghost" data-admin-refresh-runtime>刷新状态</button>
         </div>
         <p class="muted">这里按需拉取当前 Agent 和评分配置状态，避免每次点进管理页都阻塞加载。</p>
         ${agentLoading ? `<section class="empty compact-empty">正在加载运行状态...</section>` : ""}
@@ -779,6 +892,8 @@
 
   function renderAdminCurrentPanel() {
     const viewState = adminViewState();
+    if (viewState.tab === "testSets") return renderAdminTestSetManager();
+    if (viewState.tab === "grader") return renderAdminGraderPanel();
     if (viewState.tab === "public") return renderAdminPublicContentPanel();
     if (viewState.tab === "users") return renderAdminUsersPanel();
     if (viewState.tab === "runtime") return renderAdminRuntimePanel();
@@ -829,6 +944,28 @@
     return viewState.agentLoadingPromise;
   }
 
+  async function ensureAdminGraderConfig(force = false) {
+    const viewState = adminViewState();
+    if (!force && viewState.graderLoadedAt) return viewState.graderConfig;
+    if (viewState.graderLoadingPromise) return viewState.graderLoadingPromise;
+    viewState.graderError = "";
+    viewState.graderLoadingPromise = (async () => {
+      try {
+        const data = await api("/api/admin/grader-config");
+        viewState.graderConfig = data?.grader || {};
+        viewState.graderLoadedAt = Date.now();
+        return viewState.graderConfig;
+      } catch (error) {
+        viewState.graderError = error.message;
+        throw error;
+      } finally {
+        viewState.graderLoadingPromise = null;
+        rerenderAdminIfActive();
+      }
+    })();
+    return viewState.graderLoadingPromise;
+  }
+
   function primeActiveAdminTab() {
     const viewState = adminViewState();
     if (viewState.tab === "users" && !viewState.usersLoadedAt && !viewState.usersLoadingPromise) {
@@ -836,6 +973,9 @@
     }
     if (viewState.tab === "runtime" && !viewState.agentLoadedAt && !viewState.agentLoadingPromise) {
       ensureAdminAgentStatus().catch(() => {});
+    }
+    if (viewState.tab === "grader" && !viewState.graderLoadedAt && !viewState.graderLoadingPromise) {
+      ensureAdminGraderConfig().catch(() => {});
     }
   }
 
@@ -850,6 +990,9 @@
     }
     if (viewState.tab === "runtime" && !viewState.agentLoadedAt && !viewState.agentLoadingPromise) {
       ensureAdminAgentStatus().catch(() => {});
+    }
+    if (viewState.tab === "grader" && !viewState.graderLoadedAt && !viewState.graderLoadingPromise) {
+      ensureAdminGraderConfig().catch(() => {});
     }
     const currentTab = ADMIN_TABS.find((item) => item.key === viewState.tab) || ADMIN_TABS[0];
     const mainView = document.getElementById("mainView");
@@ -921,94 +1064,6 @@
           );
         },
       );
-
-      document.getElementById("adminCreateTestSetBtn")?.addEventListener("click", async (event) => {
-        const button = event.currentTarget;
-        button.disabled = true;
-        try {
-          const data = await api("/api/admin/test-sets", { method: "POST", body: JSON.stringify({}) });
-          await refreshAdminContentState();
-          rerenderAdminPreservingScroll();
-          showNotice(`${data.test_set?.name || "测试集"} 已创建`, "success");
-        } catch (error) {
-          showNotice(error.message, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-
-      mainView.querySelectorAll("[data-admin-toggle-test-set-submit]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const testSetId = button.dataset.adminToggleTestSetSubmit;
-          const testSet = state.testSets.find((item) => item.id === testSetId);
-          if (!testSet) return;
-          button.disabled = true;
-          try {
-            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}/flags`, {
-              method: "PATCH",
-              body: JSON.stringify({ submission_enabled: !(testSet.submission_enabled !== false) }),
-            });
-            state.testSets = Array.isArray(response?.test_sets) ? response.test_sets : state.testSets;
-            state.config = { ...(state.config || {}), test_sets: state.testSets };
-            state.testSetsLoadedAt = Date.now();
-            rerenderAdminPreservingScroll();
-            showNotice("测试集提交通道已更新", "success");
-          } catch (error) {
-            showNotice(error.message, "error");
-          } finally {
-            button.disabled = false;
-          }
-        });
-      });
-
-      mainView.querySelectorAll("[data-admin-save-test-set]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const testSetId = button.dataset.adminSaveTestSet;
-          const input = mainView.querySelector(`[data-admin-test-set-name="${testSetId}"]`);
-          const name = String(input?.value || "").trim();
-          button.disabled = true;
-          try {
-            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}`, {
-              method: "PATCH",
-              body: JSON.stringify({ name }),
-            });
-            state.testSets = Array.isArray(response?.test_sets) ? response.test_sets : state.testSets;
-            state.config = { ...(state.config || {}), test_sets: state.testSets };
-            state.testSetsLoadedAt = Date.now();
-            rerenderAdminPreservingScroll();
-            showNotice("测试集名称已更新，历史提交名称保持不变", "success");
-          } catch (error) {
-            showNotice(error.message, "error");
-          } finally {
-            button.disabled = false;
-          }
-        });
-      });
-
-      mainView.querySelectorAll("[data-admin-delete-test-set]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const testSetId = button.dataset.adminDeleteTestSet;
-          const testSet = state.testSets.find((item) => item.id === testSetId);
-          if (!testSet) return;
-          const memberCount = Array.isArray(testSet.case_numbers) ? testSet.case_numbers.length : 0;
-          const confirmed = confirmTwice(
-            `确定删除“${testSet.name}”吗？其中 ${memberCount} 道题将移入未分组。`,
-            "最后确认一次：历史提交和成绩会保留，但以后不能再从该测试集提交。是否继续？",
-          );
-          if (!confirmed) return;
-          button.disabled = true;
-          try {
-            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}`, { method: "DELETE" });
-            await refreshAdminContentState();
-            rerenderAdminPreservingScroll();
-            showNotice(`${response?.deleted?.name || "测试集"} 已删除，成员题已移入未分组`, "success");
-          } catch (error) {
-            showNotice(error.message, "error");
-          } finally {
-            button.disabled = false;
-          }
-        });
-      });
 
       mainView.querySelectorAll("[data-admin-case-set]").forEach((select) => {
         select.addEventListener("change", async () => {
@@ -1083,7 +1138,7 @@
             const result = await deleteAdminCase(caseItem.id, caseItem.title || caseItem.id);
             if (!result) return;
             await refreshAdminContentState();
-            OJApp.renderShell?.();
+            emit("shell:render");
             const kept = Number(result.deleted?.historical_submissions || 0);
             showNotice(
               kept > 0
@@ -1091,6 +1146,105 @@
                 : `题目 ${result.deleted.title} 已删除`,
               "success",
             );
+          } catch (error) {
+            showNotice(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+    }
+
+    if (viewState.tab === "testSets") {
+      const applyTestSetsState = (response) => {
+        state.testSets = Array.isArray(response?.test_sets) ? response.test_sets : state.testSets;
+        state.config = { ...(state.config || {}), test_sets: state.testSets };
+        state.testSetsLoadedAt = Date.now();
+      };
+
+      document.getElementById("adminCreateTestSetBtn")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const data = await api("/api/admin/test-sets", { method: "POST", body: JSON.stringify({}) });
+          await refreshAdminContentState();
+          rerenderAdminPreservingScroll();
+          showNotice(`${data.test_set?.name || "测试集"} 已创建`, "success");
+        } catch (error) {
+          showNotice(error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      mainView.querySelectorAll("[data-admin-toggle-test-set-submit]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const testSetId = button.dataset.adminToggleTestSetSubmit;
+          const testSet = state.testSets.find((item) => item.id === testSetId);
+          if (!testSet) return;
+          button.disabled = true;
+          try {
+            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}/flags`, {
+              method: "PATCH",
+              body: JSON.stringify({ submission_enabled: !(testSet.submission_enabled !== false) }),
+            });
+            applyTestSetsState(response);
+            rerenderAdminPreservingScroll();
+            showNotice("测试集提交通道已更新", "success");
+          } catch (error) {
+            showNotice(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+
+      mainView.querySelectorAll("[data-admin-save-test-set]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const testSetId = button.dataset.adminSaveTestSet;
+          const input = mainView.querySelector(`[data-admin-test-set-name="${testSetId}"]`);
+          const name = String(input?.value || "").trim();
+          const selected = Array.from(
+            mainView.querySelectorAll(`[data-admin-test-set-mcp-group="${testSetId}"] input[type="checkbox"]:checked`),
+          ).map((item) => String(item.value || "").trim()).filter(Boolean);
+          button.disabled = true;
+          try {
+            await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}`, {
+              method: "PATCH",
+              body: JSON.stringify({ name }),
+            });
+            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}/mcp-servers`, {
+              method: "PATCH",
+              body: JSON.stringify({ mcp_servers: selected }),
+            });
+            applyTestSetsState(response);
+            rerenderAdminPreservingScroll();
+            showNotice("测试集配置已保存，历史提交名称保持不变", "success");
+          } catch (error) {
+            showNotice(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+
+      mainView.querySelectorAll("[data-admin-delete-test-set]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const testSetId = button.dataset.adminDeleteTestSet;
+          const testSet = state.testSets.find((item) => item.id === testSetId);
+          if (!testSet) return;
+          const memberCount = Array.isArray(testSet.case_numbers) ? testSet.case_numbers.length : 0;
+          const confirmed = confirmTwice(
+            `确定删除“${testSet.name}”吗？其中 ${memberCount} 道题将移入未分组。`,
+            "最后确认一次：历史提交和成绩会保留，但以后不能再从该测试集提交。是否继续？",
+          );
+          if (!confirmed) return;
+          button.disabled = true;
+          try {
+            const response = await api(`/api/admin/test-sets/${encodeURIComponent(testSetId)}`, { method: "DELETE" });
+            await refreshAdminContentState();
+            rerenderAdminPreservingScroll();
+            showNotice(`${response?.deleted?.name || "测试集"} 已删除，成员题已移入未分组`, "success");
           } catch (error) {
             showNotice(error.message, "error");
           } finally {
@@ -1128,7 +1282,7 @@
           state.testSets = Array.isArray(content.config?.test_sets) ? content.config.test_sets : [];
           state.testSetsLoadedAt = Date.now();
           await refreshLeaderboard?.({ rerenderShell: false });
-          OJApp.renderShell?.();
+          emit("shell:render");
           showNotice("公开内容已保存", "success");
         } catch (error) {
           showNotice(error.message, "error");
@@ -1264,6 +1418,81 @@
       });
     }
 
+    if (viewState.tab === "grader") {
+      primeActiveAdminTab();
+      const formEl = document.getElementById("adminGraderForm");
+      const message = document.getElementById("adminGraderMessage");
+      const readPayload = () => {
+        const form = new FormData(formEl);
+        return {
+          base_url: form.get("base_url"),
+          model: form.get("model"),
+          api_key: form.get("api_key"),
+        };
+      };
+      const setMessage = (text, ok = false) => {
+        if (!message) return;
+        message.textContent = text;
+        message.className = `form-message ${ok ? "success-message" : "error-message"}`;
+      };
+
+      mainView.querySelector("[data-admin-refresh-grader]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          await ensureAdminGraderConfig(true);
+        } catch (error) {
+          showNotice(error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      document.getElementById("adminCheckGraderBtn")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        setMessage("正在检查评分模型...", true);
+        try {
+          const data = await api("/api/admin/grader-config/check", {
+            method: "POST",
+            body: JSON.stringify(readPayload()),
+          });
+          setMessage(data.message || (data.ok ? "评分模型可用" : "评分模型不可用"), !!data.ok);
+        } catch (error) {
+          setMessage(error.message || "评分模型检查失败", false);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      formEl?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const buttons = event.currentTarget.querySelectorAll("button");
+        buttons.forEach((button) => {
+          button.disabled = true;
+        });
+        setMessage("正在检查并保存评分 API...", true);
+        try {
+          const data = await api("/api/admin/grader-config", {
+            method: "PATCH",
+            body: JSON.stringify(readPayload()),
+          });
+          viewState.graderConfig = data?.grader || {};
+          viewState.graderLoadedAt = Date.now();
+          const profile = await api("/api/profile");
+          state.profile = profile?.profile || state.profile;
+          renderAdmin();
+          showNotice("评分 API 配置已保存", "success");
+        } catch (error) {
+          setMessage(error.message || "评分 API 保存失败", false);
+        } finally {
+          buttons.forEach((button) => {
+            button.disabled = false;
+          });
+        }
+      });
+    }
+
     if (viewState.tab === "runtime") {
       primeActiveAdminTab();
       mainView.querySelector("[data-admin-refresh-runtime]")?.addEventListener("click", async (event) => {
@@ -1322,7 +1551,7 @@
       const form = new FormData(event.currentTarget);
       button.disabled = true;
       try {
-        await api(`/api/admin/cases/${encodeURIComponent(caseId)}`, {
+        const response = await api(`/api/admin/cases/${encodeURIComponent(caseId)}`, {
           method: "PATCH",
           body: JSON.stringify({
             case_json: form.get("case_json"),
@@ -1332,9 +1561,9 @@
             rubrics_json: form.get("rubrics_json"),
           }),
         });
-        await refreshAdminContentState();
+        patchAdminCase(caseId, response?.case);
         showNotice("题目五个文件已保存", "success");
-        await renderAdminCaseEditor(caseId);
+        refreshAdminContentState().catch((error) => showNotice(error.message, "error"));
       } catch (error) {
         showNotice(error.message, "error");
       } finally {
@@ -1394,21 +1623,20 @@
     return ensureAdminAgentStatus(force);
   }
 
-  Object.assign(OJApp, {
-    refreshAdminContentState,
-    newCaseTemplateFiles,
-    renderAdminCaseForm,
-    renderAdmin,
-    renderAdminCaseEditor,
-    renderAdminCaseCreator,
-    deleteAdminCase,
-    uploadAdminCaseArchive,
-    bindCaseArchiveUpload,
-    adminSetTab,
-    adminSetCasePage,
-    adminRefreshUsers,
-    adminRefreshRuntime,
-    loadUsers,
-    loadAgentStatus,
-  });
-})();
+export {
+  refreshAdminContentState,
+  newCaseTemplateFiles,
+  renderAdminCaseForm,
+  renderAdmin,
+  renderAdminCaseEditor,
+  renderAdminCaseCreator,
+  deleteAdminCase,
+  uploadAdminCaseArchive,
+  bindCaseArchiveUpload,
+  adminSetTab,
+  adminSetCasePage,
+  adminRefreshUsers,
+  adminRefreshRuntime,
+  loadUsers,
+  loadAgentStatus,
+};

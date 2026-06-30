@@ -60,12 +60,24 @@ class OpenSourceHygieneTests(unittest.TestCase):
         forbidden = [
             ROOT / ".private-release-backup",
             ROOT / "static" / "app.remote.bak.js",
+            ROOT / "static" / "app.js",
         ]
         for path in forbidden:
             self.assertFalse(path.exists(), str(path))
         for path in iter_public_files():
             self.assertNotIn(".sqlite3", path.name)
             self.assertFalse(path.name.endswith((".pyc", ".bak", ".tmp")), str(path))
+
+    def test_frontend_uses_native_modules(self):
+        index_html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<script type="module" src="/static/app/main.js"></script>', index_html)
+        self.assertNotIn("/static/app.js", index_html)
+        for path in (ROOT / "static" / "app").glob("*.js"):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("window.OJApp", text, str(path))
+            self.assertNotIn("Object.assign(OJApp", text, str(path))
+            self.assertFalse(text.lstrip().startswith("(function () {"), str(path))
+            self.assertNotRegex(text, r"\son[a-z]+\s*=", str(path))
 
     def test_no_secret_markers_or_real_public_ips_are_present(self):
         failures = []

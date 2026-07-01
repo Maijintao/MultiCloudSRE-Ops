@@ -53,20 +53,56 @@ scp_upload() {
   local pass="${!pass_var:-}"
 
   if [[ -n "$key" && -f "$key" ]]; then
-    scp -o StrictHostKeyChecking=no -i "$key" "$local_path" "${user}@${host}:${remote_path}"
+    scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i "$key" "$local_path" "${user}@${host}:${remote_path}"
   elif [[ -n "$pass" ]]; then
-    sshpass -p "$pass" scp -o StrictHostKeyChecking=no "$local_path" "${user}@${host}:${remote_path}"
+    sshpass -p "$pass" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "$local_path" "${user}@${host}:${remote_path}"
+  else
+    err "无可用凭据上传 ${local_path} 到 ${user}@${host}:${remote_path}"
+    return 1
   fi
 }
 
-# kubectl 封装（根据云选择 kubeconfig/sudo）
+scp_download() {
+  local host="$1"
+  local user="$2"
+  local pass_var="$3"
+  local key_var="$4"
+  local remote_path="$5"
+  local local_path="$6"
+
+  local key="${!key_var:-}"
+  local pass="${!pass_var:-}"
+
+  if [[ -n "$key" && -f "$key" ]]; then
+    scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i "$key" "${user}@${host}:${remote_path}" "$local_path"
+  elif [[ -n "$pass" ]]; then
+    sshpass -p "$pass" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "${user}@${host}:${remote_path}" "$local_path"
+  else
+    err "无可用凭据下载 ${user}@${host}:${remote_path}"
+    return 1
+  fi
+}
+
+remote_priv_prefix() {
+  local user="$1"
+  [[ "$user" == "root" ]] && echo "" || echo "sudo -n "
+}
+
+# kubectl 封装（根据云选择连接信息和 sudo）
 kubectl_for() {
   local cloud="$1"; shift
+  local ip user pass_var key_var
+
   case "$cloud" in
-    aliyun)  ssh_exec "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "k3s kubectl $*" ;;
-    tencent) ssh_exec "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "sudo k3s kubectl $*" ;;
-    aws)     ssh_exec "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "sudo k3s kubectl $*" ;;
+    aliyun)  ip="$ALIYUN_IP";  user="$ALIYUN_USER";  pass_var="ALIYUN_PASS";  key_var="ALIYUN_KEY" ;;
+    tencent) ip="$TENCENT_IP"; user="$TENCENT_USER"; pass_var="TENCENT_PASS"; key_var="TENCENT_KEY" ;;
+    aws)     ip="$AWS_IP";     user="$AWS_USER";     pass_var="AWS_PASS";     key_var="AWS_KEY" ;;
+    *) err "未知云: $cloud"; return 1 ;;
   esac
+
+  local sudo_prefix
+  sudo_prefix="$(remote_priv_prefix "$user")"
+  ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl $*"
 }
 
 # 等待 Pod Ready

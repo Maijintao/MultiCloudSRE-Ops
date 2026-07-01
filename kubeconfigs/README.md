@@ -11,11 +11,13 @@
 
 ## 部署时自动生成
 
-deploy.sh 的步骤 08 会在各台服务器上创建 ServiceAccount 并生成对应的 kubeconfig 文件。
+deploy.sh 的 `08-generate-access` 会在各台服务器上创建 ServiceAccount 并生成对应的 kubeconfig 文件。
 
-生成的文件放在 `generated/` 目录（已被 .gitignore 忽略）。
+生成的文件放在 `generated/` 目录（已被 .gitignore 忽略），同时生成 `{cloud}-chaos-dashboard.token` 用于登录 Chaos Dashboard。
 
 ## RBAC 模板
 
 - `templates/readonly-clusterrole.yaml` — 只读 ClusterRole + ServiceAccount
 - `templates/injector-clusterrole.yaml` — 注入权限 ClusterRole + ServiceAccount（含 Chaos Mesh）
+
+- `templates/chaos-dashboard-clusterrole.yaml` — Chaos Dashboard 登录 token 对应的 ServiceAccount

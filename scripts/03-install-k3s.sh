@@ -10,6 +10,9 @@ log "在三台服务器上安装 k3s..."
 
 install_k3s() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5"
+  local sudo_prefix
+  sudo_prefix="$(remote_priv_prefix "$user")"
+
   log "  安装 k3s on $label ($ip)..."
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
@@ -20,11 +23,11 @@ install_k3s() {
     fi
 
     # 安装 k3s（禁用 traefik，我们用 NodePort）
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--disable=traefik --write-kubeconfig-mode=644' sh -
+    curl -sfL https://get.k3s.io | ${sudo_prefix}env INSTALL_K3S_EXEC='--disable=traefik --write-kubeconfig-mode=644 --tls-san ${ip}' sh -
 
     # 等待就绪
     sleep 5
-    k3s kubectl get nodes
+    ${sudo_prefix}k3s kubectl get nodes
   "
 }
 

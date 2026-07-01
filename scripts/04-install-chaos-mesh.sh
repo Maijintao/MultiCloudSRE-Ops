@@ -10,37 +10,41 @@ log "在三台服务器上安装 Chaos Mesh..."
 
 install_chaos_mesh() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5"
+  local sudo_prefix
+  sudo_prefix="$(remote_priv_prefix "$user")"
+
   log "  安装 Chaos Mesh on $label ($ip)..."
 
   # 上传 helm values 文件
-  scp_upload "$SCRIPT_DIR/../manifests/chaos-mesh/values.yaml" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh-values.yaml"
+  scp_upload "$SCRIPT_DIR/manifests/chaos-mesh/values.yaml" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh-values.yaml"
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
     # 检查是否已安装
-    if k3s kubectl get ns chaos-mesh &>/dev/null; then
+    if ${sudo_prefix}k3s kubectl get ns chaos-mesh &>/dev/null; then
       echo 'Chaos Mesh 已安装'
-      k3s kubectl get pods -n chaos-mesh
+      ${sudo_prefix}k3s kubectl get pods -n chaos-mesh
       exit 0
     fi
 
     # 安装 helm（如果没有）
     if ! command -v helm &>/dev/null; then
-      curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | ${sudo_prefix}bash
     fi
 
     # 添加 chaos-mesh repo
-    helm repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
-    helm repo update
+    ${sudo_prefix}helm repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
+    ${sudo_prefix}helm repo update
 
     # 安装
-    helm install chaos-mesh chaos-mesh/chaos-mesh \
+    ${sudo_prefix}helm install chaos-mesh chaos-mesh/chaos-mesh \
       -n chaos-mesh \
       --create-namespace \
+      --kubeconfig /etc/rancher/k3s/k3s.yaml \
       -f /tmp/chaos-mesh-values.yaml
 
     # 等待就绪
     sleep 10
-    k3s kubectl wait --for=condition=Ready pods --all -n chaos-mesh --timeout=120s
+    ${sudo_prefix}k3s kubectl wait --for=condition=Ready pods --all -n chaos-mesh --timeout=120s
   "
 }
 

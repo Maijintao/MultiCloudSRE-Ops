@@ -3,8 +3,10 @@
 
 log "渲染 K8s manifest 模板..."
 
-RENDERED_DIR="$SCRIPT_DIR/../rendered"
-MANIFESTS_DIR="$SCRIPT_DIR/../manifests"
+RENDERED_DIR="$SCRIPT_DIR/rendered"
+MANIFESTS_DIR="$SCRIPT_DIR/manifests"
+
+mkdir -p "$RENDERED_DIR/aliyun" "$RENDERED_DIR/tencent" "$RENDERED_DIR/aws"
 
 # 清理旧渲染文件
 rm -rf "$RENDERED_DIR/aliyun/"* "$RENDERED_DIR/tencent/"* "$RENDERED_DIR/aws/"*

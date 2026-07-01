@@ -1,6 +1,6 @@
 config.env
 rendered/
-kubeconfigs/generated/*.kubeconfig
+kubeconfigs/generated/
 *.tar
 *.tar.gz
 *.img

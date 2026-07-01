@@ -24,7 +24,7 @@ spec:
         - name: CART_SERVICE_ADDR
           value: "__TENCENT_IP__:30007"
         - name: AD_SERVICE_ADDR
-          value: "__ALIYUN_IP__:32366"
+          value: adservice:9555
         - name: EMAIL_SERVICE_ADDR
           value: "__TENCENT_IP__:30010"
         - name: SHOPPING_ASSISTANT_SERVICE_ADDR
@@ -39,6 +39,8 @@ spec:
           value: checkoutservice:5050
         - name: ENABLE_PROFILER
           value: "0"
+        - name: ENV_PLATFORM
+          value: local
         image: frontend-apm-direct:20260528
         imagePullPolicy: Never
         name: server

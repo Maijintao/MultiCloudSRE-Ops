@@ -6,7 +6,7 @@ log "部署 K8s 资源到三台服务器..."
 deploy_to() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5" cloud="$6"
 
-  local rendered_dir="$SCRIPT_DIR/../rendered"
+  local rendered_dir="$SCRIPT_DIR/rendered"
 
   # 上传 namespace
   if [[ -f "$rendered_dir/namespaces.yaml" ]]; then
@@ -22,7 +22,7 @@ deploy_to() {
 
   # apply
   local sudo_prefix=""
-  [[ "$user" != "root" ]] && sudo_prefix="sudo "
+  [[ "$user" != "root" ]] && sudo_prefix="sudo -n "
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
     # 先创建 namespace
@@ -32,6 +32,7 @@ deploy_to() {
 
     # apply 所有资源
     for f in /tmp/seat-1-manifests/*.yaml; do
+      [[ -f \$f ]] || continue
       echo \"apply: \$(basename \$f)\"
       ${sudo_prefix}k3s kubectl apply -f \$f
     done

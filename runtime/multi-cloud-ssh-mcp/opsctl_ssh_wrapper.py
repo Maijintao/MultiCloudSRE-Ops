@@ -11,6 +11,8 @@ import sys
 OPSCTL = "/usr/local/bin/opsctl"
 APP_DIR = "/opt/mc-robot-shop"
 ZERO_ARG_COMMANDS = {"targets", "help", "-h", "--help"}
+SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
+ALLOWED_ENV_KEYS = {"MC_ROBOT_CLOUD", "MC_ROBOT_APP_DIR", "MC_ALIYUN_HOST", "MC_TENCENT_HOST"}
 
 
 def deny(message="command not allowed"):
@@ -31,8 +33,10 @@ def parse_request():
     env = {}
     while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
         key, value = tokens.pop(0).split("=", 1)
-        if key not in {"MC_ROBOT_CLOUD", "MC_ROBOT_APP_DIR"}:
+        if key not in ALLOWED_ENV_KEYS:
             deny("environment override not allowed")
+        if key in {"MC_ALIYUN_HOST", "MC_TENCENT_HOST"} and not SAFE_HOST.fullmatch(value):
+            deny("target host override is invalid")
         env[key] = value
     if not tokens or tokens[0] not in {"opsctl", OPSCTL}:
         deny("only opsctl is allowed")
@@ -94,6 +98,8 @@ def main():
         "LC_ALL": "C.UTF-8",
         "MC_ROBOT_CLOUD": cloud,
         "MC_ROBOT_APP_DIR": APP_DIR,
+        "MC_ALIYUN_HOST": env_overrides.get("MC_ALIYUN_HOST", ""),
+        "MC_TENCENT_HOST": env_overrides.get("MC_TENCENT_HOST", ""),
     }
     completed = subprocess.run(
         ["sudo", "-n", OPSCTL, *validate_args(requested_args)],

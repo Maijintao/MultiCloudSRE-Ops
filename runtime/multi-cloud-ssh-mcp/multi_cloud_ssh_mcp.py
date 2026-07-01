@@ -223,7 +223,14 @@ def checked_command(command: Optional[str]) -> tuple[Optional[list[str]], Option
         return None, "command has too many arguments"
     if tokens[0] not in READONLY_COMMANDS and tokens[0] not in {"help", "-h", "--help"}:
         return None, "command is not in the read-only allowlist"
-    if any(token in {"|", ";", "&&", "||", "`", "&", ">", ">>", "<"} for token in tokens):
+    if any(
+        token in {"|", ";", "&&", "||", "`", "&", ">", ">>", "<"}
+        or "|" in token
+        or ";" in token
+        or "`" in token
+        or token.startswith((">", ">>", "2>", "1>", "<"))
+        for token in tokens
+    ):
         return None, "shell operators are not supported"
     return tokens, None
 
@@ -288,6 +295,8 @@ def run_opsctl(cloud: Optional[str], args: list[str]) -> str:
     command = (
         f"MC_ROBOT_CLOUD={shlex.quote(checked)} "
         f"MC_ROBOT_APP_DIR={shlex.quote(APP_DIR)} "
+        f"MC_ALIYUN_HOST={shlex.quote(CLOUDS['aliyun']['host'])} "
+        f"MC_TENCENT_HOST={shlex.quote(CLOUDS['tencent']['host'])} "
         f"opsctl {quoted_args}"
     )
     return run_ssh(checked, command)

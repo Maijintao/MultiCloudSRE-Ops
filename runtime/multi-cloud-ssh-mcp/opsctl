@@ -35,6 +35,7 @@ GATEWAY_CONTAINER = "mc-robot-gateway"
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SAFE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$")
 SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
+SAFE_INTERFACE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,31}$")
 ALLOWED_HTTP_HOSTS = {
     "127.0.0.1",
     "localhost",
@@ -45,6 +46,8 @@ ALLOWED_HTTP_HOSTS = {
 }
 ALLOWED_HTTP_PORTS = {80, 443, 18080, 18081, 18443}
 ALLOWED_SYSCTLS = {
+    "fs.file-max",
+    "kernel.pid_max",
     "net.ipv4.ip_local_port_range",
     "net.ipv4.tcp_max_syn_backlog",
     "net.core.somaxconn",
@@ -53,6 +56,9 @@ ALLOWED_SYSCTLS = {
     "vm.swappiness",
 }
 ALLOWED_PROC_FILES = {
+    "/proc/1/cgroup",
+    "/proc/cpuinfo",
+    "/proc/loadavg",
     "/proc/pressure/cpu",
     "/proc/pressure/io",
     "/proc/pressure/memory",
@@ -61,6 +67,8 @@ ALLOWED_PROC_FILES = {
     "/proc/net/snmp",
     "/proc/vmstat",
     "/proc/meminfo",
+    "/proc/sys/fs/file-max",
+    "/proc/sys/kernel/pid_max",
     "/proc/sys/fs/file-nr",
 }
 ALLOWED_CONTAINER_FILES = {
@@ -84,6 +92,19 @@ MONGO_ALLOWED = re.compile(
     r"^(?:db\.)?(?:getSiblingDB\([^)]+\)\.)?(?:products\.(?:find|findOne|getIndexes|stats)\b|system\.profile\.(?:find|stats)\b|getProfilingStatus\b)",
     re.IGNORECASE,
 )
+DOCKER_PS_ALLOWED_FIELDS = {
+    ".Command",
+    ".CreatedAt",
+    ".ID",
+    ".Image",
+    ".Names",
+    ".Ports",
+    ".RunningFor",
+    ".Size",
+    ".State",
+    ".Status",
+}
+SAFE_SINCE = re.compile(r"^\d{1,4}[smhd]$")
 
 
 def usage():
@@ -99,24 +120,29 @@ Common forms:
   run df [-h|-i] [/|/tmp]
   run lsof -n | run lsof +L1
   run cat </proc/approved-file>
-  run vmstat 1 3 | run iostat -xz 1 3
-  run ip -s link | run ip -details -statistics link show
+  run vmstat 1 3 | run vmstat 1 5 | run iostat -xz 1 3 | run iostat -xz 1 5
+  run ip -s link [show <iface>] | run ip -details -statistics link show [<iface>]
   run ip route get <approved-host>
   run ss -s | run ss -ltnp | run ss -tan
   run sysctl <approved-read-only-key>
   run iptables -S OUTPUT | run iptables -t mangle -S | run iptables -t nat -S
-  run tc qdisc show | run tc filter show
+  run tc qdisc show [dev <iface>] | run tc filter show [dev <iface>]
   run ps aux
-  run docker ps | run docker logs <service> | run docker inspect <service>
-  run docker stats <service> | run docker top <service>
-  run docker exec <service> nginx -T
+  run docker ps [-a|--all] [--no-trunc] [--format <safe-template>]
+  run docker logs [--tail N] [--since 10m] <service-or-container>
+  run docker inspect <service-or-container>
+  run docker stats [--no-stream] <service-or-container>...
+  run docker top <service-or-container>
+  run docker exec <service-or-container> nginx -T
   run docker exec <service> cat <approved-file>
+  run docker compose exec -T <service> <approved-read-only-command>
   run redis-cli <approved-read-only-command>
   run rabbitmqctl <approved-read-only-command>
   run mysql -e <approved SHOW/SELECT/EXPLAIN statement>
   run mongosh --quiet --eval <approved read-only expression>
   run openssl s_time -connect <approved-entry> <-new|-reuse> [-time 5]
   run tracepath <approved-host>
+  run ping -c <1-5> <approved-host>
   run ping -c <1-5> -M do -s <bytes> <approved-host>
   run date -u
 """
@@ -177,9 +203,54 @@ def service_name(value):
 
 def observation_container(value):
     name = str(value or "").strip()
-    if name == GATEWAY_ALIAS:
+    if name in {GATEWAY_ALIAS, GATEWAY_CONTAINER}:
         return GATEWAY_CONTAINER, False
+    prefix = "mc-robot-shop-"
+    suffix = "-1"
+    if name.startswith(prefix) and name.endswith(suffix):
+        candidate = name[len(prefix):-len(suffix)]
+        if candidate in SERVICES:
+            return candidate, True
     return service_name(name), True
+
+
+def approved_interface(value):
+    name = str(value or "").strip()
+    if not SAFE_INTERFACE.fullmatch(name):
+        deny("interface name is not approved")
+    return name
+
+
+def approved_docker_ps_format(value):
+    text = str(value or "").strip()
+    if not text or len(text) > 300:
+        deny("docker ps format is not approved")
+    fields = re.findall(r"\{\{\s*([^}\s|]+)", text)
+    if not fields or any(field not in DOCKER_PS_ALLOWED_FIELDS for field in fields):
+        deny("docker ps format is not approved")
+    return text
+
+
+def approved_tail(value):
+    text = str(value or "").strip()
+    if not text.isdigit():
+        deny("tail must be a number")
+    number = int(text)
+    if not 0 <= number <= 500:
+        deny("tail must be between 0 and 500")
+    return str(number)
+
+
+def approved_since(value):
+    text = str(value or "").strip()
+    if not SAFE_SINCE.fullmatch(text):
+        deny("since duration is not approved")
+    unit = text[-1]
+    number = int(text[:-1])
+    limits = {"s": 3600, "m": 1440, "h": 48, "d": 2}
+    if number < 1 or number > limits[unit]:
+        deny("since duration is outside the safe range")
+    return text
 
 
 def approved_host(value):
@@ -284,14 +355,163 @@ def handle_curl(rest):
     return run_command(output, cwd=APP_DIR, timeout=20)
 
 
-def handle_docker(rest):
-    if rest == ["ps"]:
+def handle_docker_ps(rest):
+    output = ["docker", "ps", "--filter", "name=mc-robot"]
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in {"-a", "--all"}:
+            output.insert(2, "--all")
+        elif token == "--no-trunc":
+            output.insert(2, "--no-trunc")
+        elif token == "--format":
+            index += 1
+            if index >= len(rest):
+                deny("docker ps --format requires a value")
+            output.extend(["--format", approved_docker_ps_format(rest[index])])
+        elif token.startswith("--format="):
+            output.extend(["--format", approved_docker_ps_format(token.split("=", 1)[1])])
+        else:
+            deny("docker ps option is not approved")
+        index += 1
+    return run_command(output)
+
+
+def handle_docker_logs(rest):
+    tail = "200"
+    since = "10m"
+    target = None
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in {"--tail", "-n"}:
+            index += 1
+            if index >= len(rest):
+                deny("docker logs tail requires a value")
+            tail = approved_tail(rest[index])
+        elif token.startswith("--tail="):
+            tail = approved_tail(token.split("=", 1)[1])
+        elif token == "--since":
+            index += 1
+            if index >= len(rest):
+                deny("docker logs since requires a value")
+            since = approved_since(rest[index])
+        elif token.startswith("--since="):
+            since = approved_since(token.split("=", 1)[1])
+        elif token in {"-f", "--follow", "--details", "--timestamps", "-t"}:
+            deny("docker logs option is not approved")
+        elif token.startswith("-"):
+            deny("docker logs option is not approved")
+        else:
+            if target is not None:
+                deny("docker logs accepts one service")
+            target = token
+        index += 1
+    if target is None:
+        deny("docker logs requires one service name")
+    service, is_compose = observation_container(target)
+    if is_compose:
+        return run_command([*COMPOSE, "logs", "--since", since, "--tail", tail, service])
+    return run_command(["docker", "logs", "--since", since, "--tail", tail, service])
+
+
+def handle_docker_stats(rest):
+    services = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--no-stream":
+            pass
+        elif token in {"--format", "--all", "-a"} or token.startswith("--format="):
+            deny("docker stats option is not approved")
+        elif token.startswith("-"):
+            deny("docker stats option is not approved")
+        else:
+            services.append(token)
+        index += 1
+    if not services:
+        deny("docker stats requires at least one service")
+    if len(services) > 8:
+        deny("docker stats accepts at most 8 services")
+    cids = []
+    for service_ref in services:
+        service, is_compose = observation_container(service_ref)
+        cids.append(container_id(service) if is_compose else service)
+    return run_command(
+        [
+            "docker",
+            "stats",
+            "--no-stream",
+            "--format",
+            "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.PIDs}}\\t{{.NetIO}}\\t{{.BlockIO}}",
+            *cids,
+        ]
+    )
+
+
+def handle_docker_top(rest):
+    if not rest:
+        deny("docker top requires one service")
+    service, is_compose = observation_container(rest[0])
+    extra = rest[1:]
+    if extra and extra not in (["aux"], ["-eo", "pid,ppid,user,stat,etimes,comm"]):
+        deny("docker top option is not approved")
+    cid = container_id(service) if is_compose else service
+    return run_command(["docker", "top", cid, "-eo", "pid,ppid,user,stat,etimes,comm"])
+
+
+def handle_compose_exec(rest):
+    args = list(rest)
+    if args and args[0] == "-T":
+        args = args[1:]
+    if len(args) < 2:
+        deny("docker compose exec requires service and command")
+    service = service_name(args[0])
+    command = args[1:]
+    if command == ["nginx", "-T"] and service == "edge":
+        return compose_exec(service, command)
+    if command[:1] == ["cat"] and len(command) == 2 and (service, command[1]) in ALLOWED_CONTAINER_FILES:
+        return compose_exec(service, command)
+    if service == "redis" and command[:1] == ["redis-cli"]:
+        return handle_redis(command[1:])
+    if service == "rabbitmq" and command[:1] == ["rabbitmqctl"]:
+        return handle_rabbit(command[1:])
+    if service == "mysql" and command[:1] == ["mysql"]:
+        mysql_args = command[1:]
+        if mysql_args and mysql_args[0] == "-uroot":
+            mysql_args = mysql_args[1:]
+        elif len(mysql_args) >= 2 and mysql_args[:2] == ["-u", "root"]:
+            mysql_args = mysql_args[2:]
+        return handle_mysql(mysql_args)
+    if service == "mongodb" and command[0] in {"mongosh", "mongo"}:
+        return handle_mongosh(command[1:])
+    deny("docker compose exec command is not approved")
+
+
+def handle_docker_compose(rest):
+    args = list(rest)
+    if args[:2] == ["-f", "docker-compose.yml"]:
+        args = args[2:]
+    if not args:
+        deny("docker compose command is required")
+    if args[0] == "ps" and len(args) == 1:
         return run_command([*COMPOSE, "ps"])
-    if len(rest) == 2 and rest[0] == "logs":
-        service, is_compose = observation_container(rest[1])
-        if is_compose:
-            return run_command([*COMPOSE, "logs", "--since", "10m", "--tail", "200", service])
-        return run_command(["docker", "logs", "--since", "10m", "--tail", "200", service])
+    if args[0] == "logs":
+        return handle_docker_logs(args[1:])
+    if args[0] == "exec":
+        return handle_compose_exec(args[1:])
+    deny("docker compose command is not approved")
+
+
+def handle_docker(rest):
+    if not rest:
+        deny()
+    if rest[0] == "compose":
+        return handle_docker_compose(rest[1:])
+    if rest[0] == "ps":
+        return handle_docker_ps(rest[1:])
+    if rest[0] == "logs":
+        return handle_docker_logs(rest[1:])
     if len(rest) == 2 and rest[0] == "inspect":
         service, is_compose = observation_container(rest[1])
         cid = container_id(service) if is_compose else service
@@ -302,23 +522,10 @@ def handle_docker(rest):
             "PidsLimit={{.HostConfig.PidsLimit}} Cmd={{json .Config.Cmd}}"
         )
         return run_command(["docker", "inspect", "--format", template, cid])
-    if len(rest) == 2 and rest[0] == "stats":
-        service, is_compose = observation_container(rest[1])
-        cid = container_id(service) if is_compose else service
-        return run_command(
-            [
-                "docker",
-                "stats",
-                "--no-stream",
-                "--format",
-                "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.PIDs}}\\t{{.NetIO}}\\t{{.BlockIO}}",
-                cid,
-            ]
-        )
-    if len(rest) == 2 and rest[0] == "top":
-        service, is_compose = observation_container(rest[1])
-        cid = container_id(service) if is_compose else service
-        return run_command(["docker", "top", cid, "-eo", "pid,ppid,user,stat,etimes,comm"])
+    if rest[0] == "stats":
+        return handle_docker_stats(rest[1:])
+    if rest[0] == "top":
+        return handle_docker_top(rest[1:])
     if len(rest) >= 3 and rest[0] == "exec":
         service, is_compose = observation_container(rest[1])
         command = rest[2:]
@@ -458,12 +665,16 @@ def dispatch(args):
         return run_command(["lsof", "-nP", *rest], timeout=30)
     if command == "cat" and len(rest) == 1 and rest[0] in ALLOWED_PROC_FILES:
         return run_command(["cat", rest[0]])
-    if command == "vmstat" and rest == ["1", "3"]:
-        return run_command(["vmstat", "1", "3"], timeout=10)
-    if command == "iostat" and rest == ["-xz", "1", "3"]:
-        return run_command(["iostat", "-xz", "1", "3"], timeout=10)
+    if command == "vmstat" and len(rest) == 2 and rest[0] == "1" and rest[1] in {"3", "5"}:
+        return run_command(["vmstat", "1", rest[1]], timeout=12)
+    if command == "iostat" and len(rest) == 3 and rest[:2] == ["-xz", "1"] and rest[2] in {"3", "5"}:
+        return run_command(["iostat", "-xz", "1", rest[2]], timeout=12)
     if command == "ip" and rest in (["-s", "link"], ["-details", "-statistics", "link", "show"]):
         return run_command(["ip", *rest])
+    if command == "ip" and len(rest) == 4 and rest[:3] == ["-s", "link", "show"]:
+        return run_command(["ip", "-s", "link", "show", approved_interface(rest[3])])
+    if command == "ip" and len(rest) == 5 and rest[:4] == ["-details", "-statistics", "link", "show"]:
+        return run_command(["ip", "-details", "-statistics", "link", "show", approved_interface(rest[4])])
     if command == "ip" and len(rest) == 3 and rest[:2] == ["route", "get"]:
         return run_command(["ip", "route", "get", approved_host(rest[2])])
     if command == "ss" and rest in (["-s"], ["-ltn"], ["-ltnp"], ["-tan"]):
@@ -479,6 +690,8 @@ def dispatch(args):
         return run_command(["iptables", *rest])
     if command == "tc" and rest in (["qdisc", "show"], ["filter", "show"]):
         return run_command(["tc", *rest])
+    if command == "tc" and len(rest) == 4 and rest[:2] in (["qdisc", "show"], ["filter", "show"]) and rest[2] == "dev":
+        return run_command(["tc", rest[0], rest[1], "dev", approved_interface(rest[3])])
     if command == "ps" and rest == ["aux"]:
         return run_command(["ps", "-eo", "pid,user,pcpu,pmem,rss,stat,etimes,comm", "--sort=-pcpu"])
     if command == "docker":
@@ -495,6 +708,11 @@ def dispatch(args):
         return handle_openssl(rest)
     if command == "tracepath" and len(rest) == 1:
         return run_command(["tracepath", approved_host(rest[0])], timeout=15)
+    if command == "ping" and len(rest) == 3 and rest[0] == "-c":
+        count, host = rest[1], rest[2]
+        if not count.isdigit() or not 1 <= int(count) <= 5:
+            deny("ping count is outside the safe range")
+        return run_command(["ping", "-c", count, approved_host(host)], timeout=15)
     if command == "ping" and len(rest) == 7 and rest[:1] == ["-c"] and rest[2:5] == ["-M", "do", "-s"]:
         count, size, host = rest[1], rest[5], rest[6]
         if not count.isdigit() or not 1 <= int(count) <= 5 or not size.isdigit() or not 64 <= int(size) <= 2000:

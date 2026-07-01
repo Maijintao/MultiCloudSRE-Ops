@@ -57,6 +57,48 @@ class OpsctlRealismTests(unittest.TestCase):
         argv = self.call("docker", "exec", "gateway", "nginx", "-T")
         self.assertEqual(argv, ["docker", "exec", "mc-robot-gateway", "nginx", "-T"])
 
+    def test_common_docker_observation_variants_are_accepted(self):
+        argv = self.call("docker", "ps", "--format", "{{.Names}} {{.Status}} {{.Image}}")
+        self.assertIn("--filter", argv)
+        self.assertIn("name=mc-robot", argv)
+        self.assertIn("--format", argv)
+        with self.assertRaises(SystemExit):
+            self.opsctl.dispatch(["docker", "ps", "--format", "{{.Labels}}"])
+
+        argv = self.call("docker", "logs", "mc-robot-shop-edge-1", "--tail", "50")
+        self.assertEqual(argv[:3], ["docker", "compose", "-f"])
+        self.assertIn("--tail", argv)
+        self.assertIn("50", argv)
+        self.assertEqual(argv[-1], "edge")
+
+        with mock.patch.object(self.opsctl, "container_id", return_value="edge123"), mock.patch.object(
+            self.opsctl, "run_command", return_value=0
+        ) as runner:
+            self.opsctl.dispatch(["docker", "stats", "--no-stream", "mc-robot-shop-edge-1"])
+        argv = runner.call_args.args[0]
+        self.assertIn("--no-stream", argv)
+        self.assertEqual(argv[-1], "edge123")
+
+    def test_common_docker_compose_exec_variants_are_accepted(self):
+        with mock.patch.object(self.opsctl, "compose_exec", return_value=0) as runner:
+            self.opsctl.dispatch([
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                "mysql",
+                "mysql",
+                "-uroot",
+                "-e",
+                "SHOW VARIABLES LIKE 'max_connections'",
+            ])
+        self.assertIn("SHOW VARIABLES LIKE 'max_connections'", runner.call_args.args[1])
+
+        with mock.patch.object(self.opsctl, "compose_exec", return_value=0) as runner:
+            self.opsctl.dispatch(["docker", "compose", "exec", "-T", "edge", "nginx", "-T"])
+        self.assertEqual(runner.call_args.args[0], "edge")
+        self.assertEqual(runner.call_args.args[1], ["nginx", "-T"])
+
     def test_docker_inspect_is_sanitized(self):
         with mock.patch.object(self.opsctl, "container_id", return_value="abc123"), mock.patch.object(
             self.opsctl, "run_command", return_value=0
@@ -93,6 +135,14 @@ class OpsctlRealismTests(unittest.TestCase):
             self.opsctl.dispatch(["docker", "exec", "edge", "sh", "-c", "id"])
         with self.assertRaises(SystemExit):
             self.opsctl.dispatch(["bash", "-c", "id"])
+
+    def test_common_host_observation_variants_are_accepted(self):
+        self.assertEqual(self.call("vmstat", "1", "5"), ["vmstat", "1", "5"])
+        self.assertEqual(self.call("iostat", "-xz", "1", "5"), ["iostat", "-xz", "1", "5"])
+        self.assertEqual(self.call("ip", "-s", "link", "show", "eth0"), ["ip", "-s", "link", "show", "eth0"])
+        self.assertEqual(self.call("tc", "qdisc", "show", "dev", "eth0"), ["tc", "qdisc", "show", "dev", "eth0"])
+        self.assertEqual(self.call("ping", "-c", "3", "203.0.113.10"), ["ping", "-c", "3", "203.0.113.10"])
+        self.assertEqual(self.call("cat", "/proc/loadavg"), ["cat", "/proc/loadavg"])
 
 
 class DemoCaseTests(unittest.TestCase):

@@ -1,0 +1,71 @@
+{
+  "fault_info": {
+    "root_cause": "Postgres数据库容器停止或不健康，导致worker无法写入投票结果，result无法读取统计数据，最终结果页访问异常或统计数据不可用。",
+    "faulty_clouds": [
+      "local"
+    ],
+    "affected_clouds": [
+      "local"
+    ],
+    "fault_location": {
+      "module": "db",
+      "file_path": null,
+      "function_or_config": "docker-compose.yml:db",
+      "description": "db服务承载投票结果持久化与结果读取，是worker写入和result读取共同依赖的核心数据库组件。"
+    }
+  },
+  "reasoning_process": {
+    "observed_symptoms": [
+      "result页面访问异常，或者结果统计数据不可用。",
+      "重新投票后结果仍然不更新。",
+      "worker或result日志中出现数据库连接失败、数据库不可达或查询异常。"
+    ],
+    "key_evidence": [
+      {
+        "source": "docker compose ps db worker result",
+        "content": "db服务未处于运行状态，而worker和result仍然依赖该数据库组件。",
+        "conclusion": "数据库服务本身存在故障。"
+      },
+      {
+        "source": "docker logs worker / docker logs result",
+        "content": "日志中出现连接Postgres失败、无法查询数据库或无法写入数据库的异常。",
+        "conclusion": "worker写入链路和result读取链路都受到db故障影响。"
+      }
+    ],
+    "causal_chain": [
+      "Postgres数据库容器停止或不健康。",
+      "worker无法把投票结果写入数据库。",
+      "result服务无法从数据库读取统计数据。",
+      "结果页访问异常或统计数据无法更新。"
+    ]
+  },
+  "verification_method": {
+    "verification_commands": [
+      {
+        "cmd": "docker compose ps db worker result",
+        "purpose": "检查db、worker和result三个关键服务的运行状态。",
+        "expected_result": "db服务处于Up状态，worker和result也处于正常运行状态。"
+      },
+      {
+        "cmd": "docker logs worker --tail 50 && docker logs result --tail 50",
+        "purpose": "确认worker写库和result读库是否恢复正常。",
+        "expected_result": "日志中不再出现数据库连接失败、查询失败或写入失败的异常。"
+      }
+    ],
+    "success_criteria": [
+      "db容器恢复运行并保持健康。",
+      "worker可以正常写入数据库，result可以正常读取统计数据。",
+      "结果页恢复访问或重新投票后页面统计能够更新。"
+    ]
+  },
+  "proposed_resolution": {
+    "suggestion": "恢复Postgres数据库服务，并让依赖数据库的worker和result重新建立稳定连接。",
+    "fix_steps": [
+      "执行 docker compose up -d db 启动数据库容器。",
+      "执行 docker compose restart worker result，确保读写数据库的上下游重新建立连接。",
+      "查看worker与result日志，确认数据库连接恢复正常。",
+      "重新提交一次投票，并检查结果页访问与统计是否恢复。"
+    ]
+  },
+  "confidence": 0.92
+}

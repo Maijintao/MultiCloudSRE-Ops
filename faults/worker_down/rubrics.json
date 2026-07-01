@@ -1,0 +1,111 @@
+{
+  "positive_points_total": 104,
+  "negative_points_total": -50,
+  "rubrics": [
+    {
+      "criterion": "准确指出根因是worker容器未运行、停止或退出",
+      "points": 10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障发生在local demo environment，或说明该demo不依赖真实公有云厂商",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "明确指出故障位置在worker服务，而不是redis、db或result服务本身",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "说明vote页面和result页面都可以访问，但提交投票后统计结果一直不变化",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用docker compose ps、docker ps或同类容器状态检查作为证据，指出worker未运行",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用worker日志、消费行为缺失或上下游状态作为证据，证明worker没有正常消费消息",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "说明worker负责从Redis消费消息并写入Postgres，是队列消费链路的核心组件",
+      "points": 8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "给出正确因果链：worker未运行 -> Redis消息无人消费 -> Postgres不更新 -> result页面数据不变化",
+      "points": 10,
+      "tags": ["level:cluster", "cluster:evidence_based_root_cause_tracing", "axis:accuracy"]
+    },
+    {
+      "criterion": "能区分页面可访问和消费链路正常不是一回事，不会因为前端页面能打开就判断系统正常",
+      "points": 6,
+      "tags": ["level:cluster", "cluster:misleading_signal_awareness", "axis:context_awareness"]
+    },
+    {
+      "criterion": "给出合理验证命令，并说明每条命令验证什么",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出合理修复方案，例如启动worker并检查消费链路恢复情况",
+      "points": 8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出修复后的成功标准，例如worker恢复消费且重新投票后结果更新",
+      "points": 6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "建议增加restart policy、健康检查、监控告警或自动拉起机制，避免worker停止后长时间无人消费",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "回答结构清晰，能分清结论、证据、因果链、验证方法和修复建议",
+      "points": 5,
+      "tags": ["level:example", "axis:communication_quality"]
+    },
+    {
+      "criterion": "按题目要求输出结构化结果，包含root_cause、faulty_clouds、affected_clouds、fault_location、key_evidence、causal_chain、verification_commands、fix_steps等字段",
+      "points": 6,
+      "tags": ["level:example", "axis:instruction_following"]
+    },
+    {
+      "criterion": "错误地将根因判断为redis、db或result故障，而没有指出worker停止",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "错误地将根因判断为浏览器缓存、页面刷新问题或前端显示问题",
+      "points": -8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "声称所有服务正常或不存在故障，明显与worker未运行和消费链路异常证据冲突",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "忽略worker未运行这一关键证据，只给出泛泛而谈的网络、权限或资源不足原因",
+      "points": -7,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "建议重装系统、删除数据库或其他破坏性操作，且没有必要性说明",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "编造不存在的命令结果、日志内容或云厂商告警作为证据",
+      "points": -5,
+      "tags": ["level:example", "axis:accuracy"]
+    }
+  ]
+}

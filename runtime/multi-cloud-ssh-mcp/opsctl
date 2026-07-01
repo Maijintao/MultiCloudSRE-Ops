@@ -1,0 +1,743 @@
+#!/usr/bin/env python3
+"""Root-owned allowlist gateway for real read-only Robot Shop observations."""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+APP_DIR = Path(os.environ.get("MC_ROBOT_APP_DIR", "/opt/mc-robot-shop")).resolve()
+CLOUD = os.environ.get("MC_ROBOT_CLOUD", "aliyun").strip().lower()
+ALIYUN_HOST = os.environ.get("MC_ALIYUN_HOST", "203.0.113.10")
+TENCENT_HOST = os.environ.get("MC_TENCENT_HOST", "198.51.100.10")
+MAX_OUTPUT_CHARS = int(os.environ.get("OJ_MULTI_CLOUD_MCP_MAX_OUTPUT_CHARS", "60000"))
+COMPOSE = ["docker", "compose", "-f", "docker-compose.yml"]
+SERVICES = {
+    "mongodb",
+    "redis",
+    "rabbitmq",
+    "catalogue",
+    "user",
+    "cart",
+    "mysql",
+    "shipping",
+    "ratings",
+    "payment",
+    "dispatch",
+    "web",
+    "edge",
+}
+GATEWAY_ALIAS = "gateway"
+GATEWAY_CONTAINER = "mc-robot-gateway"
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+SAFE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$")
+SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
+SAFE_INTERFACE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,31}$")
+ALLOWED_HTTP_HOSTS = {
+    "127.0.0.1",
+    "localhost",
+    ALIYUN_HOST,
+    TENCENT_HOST,
+    "global.robot-shop.local",
+    "robot-shop.local",
+}
+ALLOWED_HTTP_PORTS = {80, 443, 18080, 18081, 18443}
+ALLOWED_SYSCTLS = {
+    "fs.file-max",
+    "kernel.pid_max",
+    "net.ipv4.ip_local_port_range",
+    "net.ipv4.tcp_max_syn_backlog",
+    "net.core.somaxconn",
+    "net.netfilter.nf_conntrack_count",
+    "net.netfilter.nf_conntrack_max",
+    "vm.swappiness",
+}
+ALLOWED_PROC_FILES = {
+    "/proc/1/cgroup",
+    "/proc/cpuinfo",
+    "/proc/loadavg",
+    "/proc/pressure/cpu",
+    "/proc/pressure/io",
+    "/proc/pressure/memory",
+    "/proc/net/softnet_stat",
+    "/proc/net/netstat",
+    "/proc/net/snmp",
+    "/proc/vmstat",
+    "/proc/meminfo",
+    "/proc/sys/fs/file-max",
+    "/proc/sys/kernel/pid_max",
+    "/proc/sys/fs/file-nr",
+}
+ALLOWED_CONTAINER_FILES = {
+    ("shipping", "/tmp/mc-gc.log"),
+    ("shipping", "/proc/1/status"),
+    ("cart", "/sys/fs/cgroup/pids.current"),
+    ("cart", "/sys/fs/cgroup/pids.max"),
+    ("cart", "/sys/fs/cgroup/pids/pids.current"),
+    ("cart", "/sys/fs/cgroup/pids/pids.max"),
+}
+MYSQL_FORBIDDEN = re.compile(
+    r"\b(?:INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE|TRUNCATE|GRANT|REVOKE|KILL|SET|CALL|LOAD|LOCK|UNLOCK|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b",
+    re.IGNORECASE,
+)
+MYSQL_ALLOWED_START = re.compile(r"^\s*(?:SHOW|SELECT|EXPLAIN|DESC(?:RIBE)?)\b", re.IGNORECASE)
+MONGO_FORBIDDEN = re.compile(
+    r"\.(?:insert|insertOne|insertMany|update|updateOne|updateMany|delete|deleteOne|deleteMany|remove|drop|createIndex|dropIndex|setProfilingLevel|runCommand)\s*\(",
+    re.IGNORECASE,
+)
+MONGO_ALLOWED = re.compile(
+    r"^(?:db\.)?(?:getSiblingDB\([^)]+\)\.)?(?:products\.(?:find|findOne|getIndexes|stats)\b|system\.profile\.(?:find|stats)\b|getProfilingStatus\b)",
+    re.IGNORECASE,
+)
+DOCKER_PS_ALLOWED_FIELDS = {
+    ".Command",
+    ".CreatedAt",
+    ".ID",
+    ".Image",
+    ".Names",
+    ".Ports",
+    ".RunningFor",
+    ".Size",
+    ".State",
+    ".Status",
+}
+SAFE_SINCE = re.compile(r"^\d{1,4}[smhd]$")
+
+
+def usage():
+    print(
+        """Usage: opsctl <command> [args]
+
+This account exposes real read-only observations. Shell operators and writes are disabled.
+
+Common forms:
+  run uptime | run free -m
+  targets
+  run curl [-I] [-H Host:<name>] [--max-time <seconds>] <url-or-path>
+  run df [-h|-i] [/|/tmp]
+  run lsof -n | run lsof +L1
+  run cat </proc/approved-file>
+  run vmstat 1 3 | run vmstat 1 5 | run iostat -xz 1 3 | run iostat -xz 1 5
+  run ip -s link [show <iface>] | run ip -details -statistics link show [<iface>]
+  run ip route get <approved-host>
+  run ss -s | run ss -ltnp | run ss -tan
+  run sysctl <approved-read-only-key>
+  run iptables -S OUTPUT | run iptables -t mangle -S | run iptables -t nat -S
+  run tc qdisc show [dev <iface>] | run tc filter show [dev <iface>]
+  run ps aux
+  run docker ps [-a|--all] [--no-trunc] [--format <safe-template>]
+  run docker logs [--tail N] [--since 10m] <service-or-container>
+  run docker inspect <service-or-container>
+  run docker stats [--no-stream] <service-or-container>...
+  run docker top <service-or-container>
+  run docker exec <service-or-container> nginx -T
+  run docker exec <service> cat <approved-file>
+  run docker compose exec -T <service> <approved-read-only-command>
+  run redis-cli <approved-read-only-command>
+  run rabbitmqctl <approved-read-only-command>
+  run mysql -e <approved SHOW/SELECT/EXPLAIN statement>
+  run mongosh --quiet --eval <approved read-only expression>
+  run openssl s_time -connect <approved-entry> <-new|-reuse> [-time 5]
+  run tracepath <approved-host>
+  run ping -c <1-5> <approved-host>
+  run ping -c <1-5> -M do -s <bytes> <approved-host>
+  run date -u
+"""
+    )
+
+
+def clean_env():
+    return {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "HOME": "/root",
+    }
+
+
+def run_command(argv, cwd=None, timeout=45):
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(cwd or APP_DIR),
+            env=clean_env(),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+        output += f"\ncommand timed out after {timeout} seconds"
+        print(output.strip())
+        return 124
+    except OSError as exc:
+        print(f"command unavailable: {exc}")
+        return 127
+    output = (completed.stdout or "") + (completed.stderr or "")
+    if len(output) > MAX_OUTPUT_CHARS:
+        output = output[:MAX_OUTPUT_CHARS] + "\n...[truncated]\n"
+    if output:
+        print(output.rstrip())
+    elif completed.returncode:
+        print(f"command exited with status {completed.returncode}")
+    return completed.returncode
+
+
+def deny(message="unsupported read-only command"):
+    print(message, file=sys.stderr)
+    raise SystemExit(126)
+
+
+def service_name(value):
+    name = str(value or "").strip()
+    if name not in SERVICES:
+        deny("service is not in the Robot Shop allowlist")
+    return name
+
+
+def observation_container(value):
+    name = str(value or "").strip()
+    if name in {GATEWAY_ALIAS, GATEWAY_CONTAINER}:
+        return GATEWAY_CONTAINER, False
+    prefix = "mc-robot-shop-"
+    suffix = "-1"
+    if name.startswith(prefix) and name.endswith(suffix):
+        candidate = name[len(prefix):-len(suffix)]
+        if candidate in SERVICES:
+            return candidate, True
+    return service_name(name), True
+
+
+def approved_interface(value):
+    name = str(value or "").strip()
+    if not SAFE_INTERFACE.fullmatch(name):
+        deny("interface name is not approved")
+    return name
+
+
+def approved_docker_ps_format(value):
+    text = str(value or "").strip()
+    if not text or len(text) > 300:
+        deny("docker ps format is not approved")
+    fields = re.findall(r"\{\{\s*([^}\s|]+)", text)
+    if not fields or any(field not in DOCKER_PS_ALLOWED_FIELDS for field in fields):
+        deny("docker ps format is not approved")
+    return text
+
+
+def approved_tail(value):
+    text = str(value or "").strip()
+    if not text.isdigit():
+        deny("tail must be a number")
+    number = int(text)
+    if not 0 <= number <= 500:
+        deny("tail must be between 0 and 500")
+    return str(number)
+
+
+def approved_since(value):
+    text = str(value or "").strip()
+    if not SAFE_SINCE.fullmatch(text):
+        deny("since duration is not approved")
+    unit = text[-1]
+    number = int(text[:-1])
+    limits = {"s": 3600, "m": 1440, "h": 48, "d": 2}
+    if number < 1 or number > limits[unit]:
+        deny("since duration is outside the safe range")
+    return text
+
+
+def approved_host(value):
+    host = str(value or "").strip().lower()
+    if host not in ALLOWED_HTTP_HOSTS or not SAFE_HOST.fullmatch(host):
+        deny("host is not in the contest allowlist")
+    return host
+
+
+def approved_url(value):
+    text = str(value or "").strip()
+    if text.startswith("/"):
+        return f"http://127.0.0.1:18081{text}"
+    parsed = urlparse(text)
+    if parsed.scheme not in {"http", "https"}:
+        deny("curl only supports http and https")
+    host = approved_host(parsed.hostname or "")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        deny("invalid URL port")
+    if port not in ALLOWED_HTTP_PORTS:
+        deny("URL port is not in the contest allowlist")
+    if parsed.username or parsed.password or parsed.fragment:
+        deny("URL credentials and fragments are not supported")
+    if len(text) > 600 or host not in ALLOWED_HTTP_HOSTS:
+        deny("URL is not allowed")
+    return text
+
+
+def compose_exec(service, argv, timeout=45):
+    return run_command([*COMPOSE, "exec", "-T", service_name(service), *argv], timeout=timeout)
+
+
+def container_id(service):
+    completed = subprocess.run(
+        [*COMPOSE, "ps", "-q", service_name(service)],
+        cwd=str(APP_DIR),
+        env=clean_env(),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    value = (completed.stdout or "").strip()
+    if completed.returncode or not value or not SAFE_NAME.fullmatch(value):
+        deny("service container is unavailable")
+    return value
+
+
+def handle_curl(rest):
+    if not rest:
+        deny("curl target is required")
+    output = ["curl", "-sS"]
+    index = 0
+    target = None
+    while index < len(rest):
+        token = rest[index]
+        if token == "-I":
+            output.append("-I")
+        elif token == "-k":
+            output.append("-k")
+        elif token == "-H":
+            index += 1
+            if index >= len(rest):
+                deny("curl -H requires a value")
+            header = rest[index]
+            name, separator, value = header.partition(":")
+            if separator != ":" or name.lower() != "host" or not SAFE_HOST.fullmatch(value.strip()):
+                deny("only a safe Host header is supported")
+            output.extend(["-H", f"Host:{value.strip()}"])
+        elif token == "--max-time":
+            index += 1
+            if index >= len(rest) or not rest[index].isdigit() or not 1 <= int(rest[index]) <= 15:
+                deny("curl max time must be between 1 and 15 seconds")
+            output.extend(["--max-time", rest[index]])
+        elif token in {"-o", "-w"}:
+            index += 1
+            if index >= len(rest):
+                deny(f"curl {token} requires a value")
+            value = rest[index]
+            if token == "-o" and value != "/dev/null":
+                deny("curl output can only be discarded to /dev/null")
+            if token == "-w" and value not in {
+                "%{http_code} %{time_total} %{size_download}\\n",
+                "status=%{http_code} time_total=%{time_total} size=%{size_download}\\n",
+            }:
+                deny("curl write-out format is not approved")
+            output.extend([token, value])
+        elif token.startswith("-"):
+            deny("curl option is not approved")
+        else:
+            if target is not None:
+                deny("curl accepts one target")
+            target = approved_url(token)
+        index += 1
+    if target is None:
+        deny("curl target is required")
+    output.append(target)
+    return run_command(output, cwd=APP_DIR, timeout=20)
+
+
+def handle_docker_ps(rest):
+    output = ["docker", "ps", "--filter", "name=mc-robot"]
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in {"-a", "--all"}:
+            output.insert(2, "--all")
+        elif token == "--no-trunc":
+            output.insert(2, "--no-trunc")
+        elif token == "--format":
+            index += 1
+            if index >= len(rest):
+                deny("docker ps --format requires a value")
+            output.extend(["--format", approved_docker_ps_format(rest[index])])
+        elif token.startswith("--format="):
+            output.extend(["--format", approved_docker_ps_format(token.split("=", 1)[1])])
+        else:
+            deny("docker ps option is not approved")
+        index += 1
+    return run_command(output)
+
+
+def handle_docker_logs(rest):
+    tail = "200"
+    since = "10m"
+    target = None
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in {"--tail", "-n"}:
+            index += 1
+            if index >= len(rest):
+                deny("docker logs tail requires a value")
+            tail = approved_tail(rest[index])
+        elif token.startswith("--tail="):
+            tail = approved_tail(token.split("=", 1)[1])
+        elif token == "--since":
+            index += 1
+            if index >= len(rest):
+                deny("docker logs since requires a value")
+            since = approved_since(rest[index])
+        elif token.startswith("--since="):
+            since = approved_since(token.split("=", 1)[1])
+        elif token in {"-f", "--follow", "--details", "--timestamps", "-t"}:
+            deny("docker logs option is not approved")
+        elif token.startswith("-"):
+            deny("docker logs option is not approved")
+        else:
+            if target is not None:
+                deny("docker logs accepts one service")
+            target = token
+        index += 1
+    if target is None:
+        deny("docker logs requires one service name")
+    service, is_compose = observation_container(target)
+    if is_compose:
+        return run_command([*COMPOSE, "logs", "--since", since, "--tail", tail, service])
+    return run_command(["docker", "logs", "--since", since, "--tail", tail, service])
+
+
+def handle_docker_stats(rest):
+    services = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--no-stream":
+            pass
+        elif token in {"--format", "--all", "-a"} or token.startswith("--format="):
+            deny("docker stats option is not approved")
+        elif token.startswith("-"):
+            deny("docker stats option is not approved")
+        else:
+            services.append(token)
+        index += 1
+    if not services:
+        deny("docker stats requires at least one service")
+    if len(services) > 8:
+        deny("docker stats accepts at most 8 services")
+    cids = []
+    for service_ref in services:
+        service, is_compose = observation_container(service_ref)
+        cids.append(container_id(service) if is_compose else service)
+    return run_command(
+        [
+            "docker",
+            "stats",
+            "--no-stream",
+            "--format",
+            "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.PIDs}}\\t{{.NetIO}}\\t{{.BlockIO}}",
+            *cids,
+        ]
+    )
+
+
+def handle_docker_top(rest):
+    if not rest:
+        deny("docker top requires one service")
+    service, is_compose = observation_container(rest[0])
+    extra = rest[1:]
+    if extra and extra not in (["aux"], ["-eo", "pid,ppid,user,stat,etimes,comm"]):
+        deny("docker top option is not approved")
+    cid = container_id(service) if is_compose else service
+    return run_command(["docker", "top", cid, "-eo", "pid,ppid,user,stat,etimes,comm"])
+
+
+def handle_compose_exec(rest):
+    args = list(rest)
+    if args and args[0] == "-T":
+        args = args[1:]
+    if len(args) < 2:
+        deny("docker compose exec requires service and command")
+    service = service_name(args[0])
+    command = args[1:]
+    if command == ["nginx", "-T"] and service == "edge":
+        return compose_exec(service, command)
+    if command[:1] == ["cat"] and len(command) == 2 and (service, command[1]) in ALLOWED_CONTAINER_FILES:
+        return compose_exec(service, command)
+    if service == "redis" and command[:1] == ["redis-cli"]:
+        return handle_redis(command[1:])
+    if service == "rabbitmq" and command[:1] == ["rabbitmqctl"]:
+        return handle_rabbit(command[1:])
+    if service == "mysql" and command[:1] == ["mysql"]:
+        mysql_args = command[1:]
+        if mysql_args and mysql_args[0] == "-uroot":
+            mysql_args = mysql_args[1:]
+        elif len(mysql_args) >= 2 and mysql_args[:2] == ["-u", "root"]:
+            mysql_args = mysql_args[2:]
+        return handle_mysql(mysql_args)
+    if service == "mongodb" and command[0] in {"mongosh", "mongo"}:
+        return handle_mongosh(command[1:])
+    deny("docker compose exec command is not approved")
+
+
+def handle_docker_compose(rest):
+    args = list(rest)
+    if args[:2] == ["-f", "docker-compose.yml"]:
+        args = args[2:]
+    if not args:
+        deny("docker compose command is required")
+    if args[0] == "ps" and len(args) == 1:
+        return run_command([*COMPOSE, "ps"])
+    if args[0] == "logs":
+        return handle_docker_logs(args[1:])
+    if args[0] == "exec":
+        return handle_compose_exec(args[1:])
+    deny("docker compose command is not approved")
+
+
+def handle_docker(rest):
+    if not rest:
+        deny()
+    if rest[0] == "compose":
+        return handle_docker_compose(rest[1:])
+    if rest[0] == "ps":
+        return handle_docker_ps(rest[1:])
+    if rest[0] == "logs":
+        return handle_docker_logs(rest[1:])
+    if len(rest) == 2 and rest[0] == "inspect":
+        service, is_compose = observation_container(rest[1])
+        cid = container_id(service) if is_compose else service
+        template = (
+            "Name={{.Name}} State={{.State.Status}} RestartCount={{.RestartCount}} "
+            "Memory={{.HostConfig.Memory}} CpuQuota={{.HostConfig.CpuQuota}} "
+            "NanoCpus={{.HostConfig.NanoCpus}} CpusetCpus={{.HostConfig.CpusetCpus}} "
+            "PidsLimit={{.HostConfig.PidsLimit}} Cmd={{json .Config.Cmd}}"
+        )
+        return run_command(["docker", "inspect", "--format", template, cid])
+    if rest[0] == "stats":
+        return handle_docker_stats(rest[1:])
+    if rest[0] == "top":
+        return handle_docker_top(rest[1:])
+    if len(rest) >= 3 and rest[0] == "exec":
+        service, is_compose = observation_container(rest[1])
+        command = rest[2:]
+        if command == ["nginx", "-T"] and service in {"edge", GATEWAY_CONTAINER}:
+            if is_compose:
+                return compose_exec(service, command)
+            return run_command(["docker", "exec", service, *command])
+        if is_compose and (service, command[-1] if command[:1] == ["cat"] and len(command) == 2 else "") in ALLOWED_CONTAINER_FILES:
+            return compose_exec(service, command)
+        deny("docker exec command is not approved")
+    deny()
+
+
+def handle_redis(rest):
+    approved = {
+        ("INFO",),
+        ("LATENCY", "LATEST"),
+        ("CONFIG", "GET", "maxmemory"),
+        ("CONFIG", "GET", "maxmemory-policy"),
+        ("CONFIG", "GET", "appendonly"),
+        ("CONFIG", "GET", "appendfsync"),
+        ("CONFIG", "GET", "latency-monitor-threshold"),
+        ("DBSIZE",),
+        ("--bigkeys",),
+    }
+    key_commands = {"MEMORY", "TYPE", "STRLEN", "LLEN", "HLEN", "SCARD", "ZCARD", "TTL"}
+    if tuple(rest) in approved:
+        return compose_exec("redis", ["redis-cli", *rest], timeout=60)
+    if len(rest) == 3 and rest[:2] == ["MEMORY", "USAGE"] and SAFE_KEY.fullmatch(rest[2]):
+        return compose_exec("redis", ["redis-cli", *rest])
+    if len(rest) == 2 and rest[0] in key_commands and SAFE_KEY.fullmatch(rest[1]):
+        return compose_exec("redis", ["redis-cli", *rest])
+    deny("redis command is not approved")
+
+
+def handle_rabbit(rest):
+    approved_prefixes = {
+        "status",
+        "environment",
+        "list_queues",
+        "list_consumers",
+        "list_policies",
+        "list_exchanges",
+        "list_bindings",
+    }
+    if not rest or rest[0] not in approved_prefixes:
+        deny("rabbitmqctl command is not approved")
+    allowed_fields = {
+        "name",
+        "messages",
+        "messages_ready",
+        "messages_unacknowledged",
+        "consumers",
+        "arguments",
+        "policy",
+        "pattern",
+        "definition",
+        "priority",
+        "apply-to",
+        "source_name",
+        "destination_name",
+        "routing_key",
+    }
+    if rest[0].startswith("list_") and any(item not in allowed_fields for item in rest[1:]):
+        deny("rabbitmqctl field is not approved")
+    return compose_exec("rabbitmq", ["rabbitmqctl", *rest], timeout=60)
+
+
+def handle_mysql(rest):
+    if len(rest) != 2 or rest[0] != "-e":
+        deny("mysql requires one -e statement")
+    query = rest[1].strip()
+    if len(query) > 1600 or MYSQL_FORBIDDEN.search(query):
+        deny("mysql statement is not read-only")
+    statements = [item.strip() for item in query.split(";") if item.strip()]
+    if not statements or any(not MYSQL_ALLOWED_START.match(item) for item in statements):
+        deny("mysql statement must be SHOW, SELECT, EXPLAIN, or DESCRIBE")
+    return compose_exec("mysql", ["mysql", "-uroot", "-e", query], timeout=60)
+
+
+def handle_mongosh(rest):
+    if len(rest) != 3 or rest[:2] != ["--quiet", "--eval"]:
+        deny("mongosh requires --quiet --eval")
+    expression = rest[2].strip()
+    if len(expression) > 1600 or ";" in expression or MONGO_FORBIDDEN.search(expression):
+        deny("MongoDB expression is not read-only")
+    normalized = expression
+    if normalized.startswith("db.getSiblingDB"):
+        tail = normalized.split(").", 1)
+        normalized = tail[1] if len(tail) == 2 else ""
+    elif normalized.startswith("db."):
+        normalized = normalized[3:]
+    if not MONGO_ALLOWED.match(normalized):
+        deny("MongoDB expression is not approved")
+    return compose_exec("mongodb", ["mongosh", "--quiet", "--eval", expression], timeout=60)
+
+
+def handle_openssl(rest):
+    if not rest or rest[0] != "s_time":
+        deny("only openssl s_time is approved")
+    if "-connect" not in rest or not any(item in {"-new", "-reuse"} for item in rest):
+        deny("openssl s_time requires -connect and -new or -reuse")
+    connect_index = rest.index("-connect") + 1
+    if connect_index >= len(rest):
+        deny("openssl connect target is required")
+    target = rest[connect_index]
+    host, separator, port = target.rpartition(":")
+    if not separator or approved_host(host) not in ALLOWED_HTTP_HOSTS or not port.isdigit() or int(port) not in {443, 18443}:
+        deny("openssl target is not approved")
+    approved = ["s_time", "-connect", target]
+    approved.append("-reuse" if "-reuse" in rest else "-new")
+    if "-time" in rest:
+        time_index = rest.index("-time") + 1
+        if time_index >= len(rest) or rest[time_index] not in {"3", "5", "10"}:
+            deny("openssl s_time duration is not approved")
+        approved.extend(["-time", rest[time_index]])
+    else:
+        approved.extend(["-time", "5"])
+    return run_command(["openssl", *approved], timeout=20)
+
+
+def dispatch(args):
+    if not args:
+        deny("run command is required")
+    command, rest = args[0], args[1:]
+    if command == "uptime" and not rest:
+        return run_command(["uptime"])
+    if command == "free" and rest in (["-m"], ["-h"]):
+        return run_command(["free", *rest])
+    if command == "curl":
+        return handle_curl(rest)
+    if command == "df" and all(item in {"-h", "-i", "/", "/tmp"} for item in rest):
+        return run_command(["df", *rest])
+    if command == "find" and rest == ["/tmp", "-xdev", "-type", "f"]:
+        return run_command(["find", "/tmp", "-xdev", "-type", "f", "-printf", "%p %s bytes\\n"])
+    if command == "lsof" and rest in (["-n"], ["+L1"]):
+        return run_command(["lsof", "-nP", *rest], timeout=30)
+    if command == "cat" and len(rest) == 1 and rest[0] in ALLOWED_PROC_FILES:
+        return run_command(["cat", rest[0]])
+    if command == "vmstat" and len(rest) == 2 and rest[0] == "1" and rest[1] in {"3", "5"}:
+        return run_command(["vmstat", "1", rest[1]], timeout=12)
+    if command == "iostat" and len(rest) == 3 and rest[:2] == ["-xz", "1"] and rest[2] in {"3", "5"}:
+        return run_command(["iostat", "-xz", "1", rest[2]], timeout=12)
+    if command == "ip" and rest in (["-s", "link"], ["-details", "-statistics", "link", "show"]):
+        return run_command(["ip", *rest])
+    if command == "ip" and len(rest) == 4 and rest[:3] == ["-s", "link", "show"]:
+        return run_command(["ip", "-s", "link", "show", approved_interface(rest[3])])
+    if command == "ip" and len(rest) == 5 and rest[:4] == ["-details", "-statistics", "link", "show"]:
+        return run_command(["ip", "-details", "-statistics", "link", "show", approved_interface(rest[4])])
+    if command == "ip" and len(rest) == 3 and rest[:2] == ["route", "get"]:
+        return run_command(["ip", "route", "get", approved_host(rest[2])])
+    if command == "ss" and rest in (["-s"], ["-ltn"], ["-ltnp"], ["-tan"]):
+        return run_command(["ss", *rest])
+    if command == "sysctl" and len(rest) == 1 and rest[0] in ALLOWED_SYSCTLS:
+        return run_command(["sysctl", rest[0]])
+    if command == "iptables" and rest in (
+        ["-S", "OUTPUT"],
+        ["-S", "INPUT"],
+        ["-t", "mangle", "-S"],
+        ["-t", "nat", "-S"],
+    ):
+        return run_command(["iptables", *rest])
+    if command == "tc" and rest in (["qdisc", "show"], ["filter", "show"]):
+        return run_command(["tc", *rest])
+    if command == "tc" and len(rest) == 4 and rest[:2] in (["qdisc", "show"], ["filter", "show"]) and rest[2] == "dev":
+        return run_command(["tc", rest[0], rest[1], "dev", approved_interface(rest[3])])
+    if command == "ps" and rest == ["aux"]:
+        return run_command(["ps", "-eo", "pid,user,pcpu,pmem,rss,stat,etimes,comm", "--sort=-pcpu"])
+    if command == "docker":
+        return handle_docker(rest)
+    if command == "redis-cli":
+        return handle_redis(rest)
+    if command == "rabbitmqctl":
+        return handle_rabbit(rest)
+    if command == "mysql":
+        return handle_mysql(rest)
+    if command == "mongosh":
+        return handle_mongosh(rest)
+    if command == "openssl":
+        return handle_openssl(rest)
+    if command == "tracepath" and len(rest) == 1:
+        return run_command(["tracepath", approved_host(rest[0])], timeout=15)
+    if command == "ping" and len(rest) == 3 and rest[0] == "-c":
+        count, host = rest[1], rest[2]
+        if not count.isdigit() or not 1 <= int(count) <= 5:
+            deny("ping count is outside the safe range")
+        return run_command(["ping", "-c", count, approved_host(host)], timeout=15)
+    if command == "ping" and len(rest) == 7 and rest[:1] == ["-c"] and rest[2:5] == ["-M", "do", "-s"]:
+        count, size, host = rest[1], rest[5], rest[6]
+        if not count.isdigit() or not 1 <= int(count) <= 5 or not size.isdigit() or not 64 <= int(size) <= 2000:
+            deny("ping count or size is outside the safe range")
+        return run_command(["ping", "-c", count, "-M", "do", "-s", size, approved_host(host)], timeout=15)
+    if command == "date" and rest == ["-u"]:
+        return run_command(["date", "-u"])
+    deny()
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "help"
+    if command in {"help", "-h", "--help"}:
+        usage()
+        return 0
+    if command == "targets":
+        print(f"aliyun direct=http://{ALIYUN_HOST}:18081/ global=http://{ALIYUN_HOST}:18080/")
+        print(f"tencent direct=http://{TENCENT_HOST}:18081/")
+        return 0
+    if command == "run":
+        if APP_DIR != Path("/opt/mc-robot-shop") and not os.environ.get("OPSCTL_TESTING"):
+            deny("application directory is not approved")
+        return dispatch(argv[2:])
+    deny("unknown opsctl command")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

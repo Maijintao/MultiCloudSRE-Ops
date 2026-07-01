@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.service text eol=lf
+
+Dockerfile text eol=lf
+*.sqlite3 binary
+*.png binary

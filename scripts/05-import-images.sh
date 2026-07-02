@@ -136,6 +136,11 @@ import_images_for_host() {
 
   log "  导入镜像到 $label ($ip)，承载角色: $roles"
 
+  if ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}test -f /var/lib/rancher/k3s/.sre-images-imported"; then
+    log "  $label 镜像已导入过，跳过（删除 /var/lib/rancher/k3s/.sre-images-imported 可强制重新导入）"
+    return 0
+  fi
+
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "rm -rf /tmp/sre-images && mkdir -p /tmp/sre-images"
 
   if [[ "$IMAGE_IMPORT_MODE" == "remote" ]]; then
@@ -207,6 +212,7 @@ import_images_for_host() {
     done
 
     rm -rf /tmp/sre-images
+    ${sudo_prefix}touch /var/lib/rancher/k3s/.sre-images-imported
   "
 
   log "  $label 镜像导入完成"

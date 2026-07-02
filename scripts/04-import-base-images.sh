@@ -42,8 +42,11 @@ import_base_images_for_host() {
 
   log "  导入基础镜像到 $label ($ip)..."
 
-  if ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl get ns chaos-mesh >/dev/null 2>&1"; then
-    log "  $label 已安装 Chaos Mesh，跳过基础镜像重复导入"
+  local chaos_ok=0 pause_ok=0
+  ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl get ns chaos-mesh >/dev/null 2>&1" && chaos_ok=1
+  ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s ctr images ls -q 2>/dev/null | grep -q 'rancher/mirrored-pause'" && pause_ok=1
+  if [[ $chaos_ok -eq 1 && $pause_ok -eq 1 ]]; then
+    log "  $label 已安装 Chaos Mesh 且 pause 镜像存在，跳过基础镜像重复导入"
     return 0
   fi
 

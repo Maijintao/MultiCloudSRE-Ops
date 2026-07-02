@@ -3,7 +3,8 @@
 # 公共函数库 — 被所有子脚本 source
 # ============================================================
 
-# SSH 执行封装（自动选择密码/密钥）
+_ssh_opts="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no"
+
 ssh_exec() {
   local host="$1"; shift
   local user="$1"; shift
@@ -12,11 +13,18 @@ ssh_exec() {
 
   local key="${!key_var:-}"
   local pass="${!pass_var:-}"
+  local attempt rc
 
   if [[ -n "$key" && -f "$key" ]]; then
     ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$key" "${user}@${host}" "$@"
   elif [[ -n "$pass" ]]; then
-    sshpass -p "$pass" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "${user}@${host}" "$@"
+    for attempt in 1 2 3; do
+      sshpass -p "$pass" ssh $_ssh_opts "${user}@${host}" "$@"
+      rc=$?
+      [[ $rc -eq 0 ]] && return 0
+      [[ $attempt -lt 3 ]] && sleep 2
+    done
+    return $rc
   else
     err "无可用凭据连接 ${user}@${host}"
     return 1
@@ -63,7 +71,6 @@ ssh_all_parallel() {
   return $fail
 }
 
-# SCP 上传封装
 scp_upload() {
   local local_path="$1"
   local host="$2"
@@ -74,11 +81,19 @@ scp_upload() {
 
   local key="${!key_var:-}"
   local pass="${!pass_var:-}"
+  local attempt rc
 
   if [[ -n "$key" && -f "$key" ]]; then
     scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i "$key" "$local_path" "${user}@${host}:${remote_path}"
   elif [[ -n "$pass" ]]; then
-    sshpass -p "$pass" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "$local_path" "${user}@${host}:${remote_path}"
+    for attempt in 1 2 3; do
+      sshpass -p "$pass" scp $_ssh_opts -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "$local_path" "${user}@${host}:${remote_path}"
+      rc=$?
+      [[ $rc -eq 0 ]] && return 0
+      [[ $attempt -lt 3 ]] && sleep 2
+    done
+    err "scp_upload 失败 (重试 3 次): $(basename "$local_path") -> ${user}@${host}"
+    return $rc
   else
     err "无可用凭据上传 ${local_path} 到 ${user}@${host}:${remote_path}"
     return 1
@@ -95,11 +110,19 @@ scp_download() {
 
   local key="${!key_var:-}"
   local pass="${!pass_var:-}"
+  local attempt rc
 
   if [[ -n "$key" && -f "$key" ]]; then
     scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i "$key" "${user}@${host}:${remote_path}" "$local_path"
   elif [[ -n "$pass" ]]; then
-    sshpass -p "$pass" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "${user}@${host}:${remote_path}" "$local_path"
+    for attempt in 1 2 3; do
+      sshpass -p "$pass" scp $_ssh_opts -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "${user}@${host}:${remote_path}" "$local_path"
+      rc=$?
+      [[ $rc -eq 0 ]] && return 0
+      [[ $attempt -lt 3 ]] && sleep 2
+    done
+    err "scp_download 失败 (重试 3 次): ${user}@${host}:${remote_path}"
+    return $rc
   else
     err "无可用凭据下载 ${user}@${host}:${remote_path}"
     return 1

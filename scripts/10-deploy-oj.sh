@@ -164,7 +164,7 @@ ssh_exec "$OJ_IP" "$OJ_USER" "OJ_PASS" "OJ_KEY" "
   if [ \"\$docker_ok\" = \"false\" ]; then
     echo \"[deploy] Installing Docker CE...\"
     # 优先用官方脚本 + 阿里云镜像
-    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null || true
+    curl --http1.1 -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null || true
     if [ -s /tmp/get-docker.sh ]; then
       ${sudo_prefix}sh /tmp/get-docker.sh --mirror Aliyun 2>&1 || true
       rm -f /tmp/get-docker.sh
@@ -216,7 +216,7 @@ ssh_exec "$OJ_IP" "$OJ_USER" "OJ_PASS" "OJ_KEY" "
 
   if ! command -v kubectl >/dev/null 2>&1; then
     tmp_kubectl=/tmp/kubectl
-    curl -fsSL -o \"\$tmp_kubectl\" 'https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl'
+    curl --http1.1 -fsSL -o \"\$tmp_kubectl\" 'https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl'
     ${sudo_prefix}install -m 0755 \"\$tmp_kubectl\" /usr/local/bin/kubectl
     rm -f \"\$tmp_kubectl\"
   fi

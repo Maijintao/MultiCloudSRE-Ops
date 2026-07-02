@@ -47,7 +47,7 @@ install_k3s() {
       echo '使用已上传的 k3s 二进制: /tmp/k3s'
       ${sudo_prefix}install -m 0755 /tmp/k3s /usr/local/bin/k3s
       rm -f /tmp/k3s
-      curl -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
+      curl --http1.1 -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
         INSTALL_K3S_SKIP_DOWNLOAD=true \
         INSTALL_K3S_EXEC='--disable=traefik --write-kubeconfig-mode=644 --tls-san ${ip}' \
         sh -
@@ -63,18 +63,18 @@ install_k3s() {
           --connect-timeout=20 --timeout=60 \
           -d /tmp -o k3s \"\$k3s_binary_url\"
       else
-        curl -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 600 \
+        curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 600 \
           -o /tmp/k3s \"\$k3s_binary_url\"
       fi
       ${sudo_prefix}install -m 0755 /tmp/k3s /usr/local/bin/k3s
       rm -f /tmp/k3s
-      curl -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
+      curl --http1.1 -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
         INSTALL_K3S_SKIP_DOWNLOAD=true \
         INSTALL_K3S_EXEC='--disable=traefik --write-kubeconfig-mode=644 --tls-san ${ip}' \
         sh -
     else
       # 安装 k3s（禁用 traefik，我们用 NodePort）
-      curl -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
+      curl --http1.1 -sfL --retry 5 --retry-delay 5 \"\$install_url\" | ${sudo_prefix}env \
         INSTALL_K3S_EXEC='--disable=traefik --write-kubeconfig-mode=644 --tls-san ${ip}' \
         sh -
     fi

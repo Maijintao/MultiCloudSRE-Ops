@@ -64,7 +64,7 @@ import_base_images_for_host() {
           --connect-timeout=20 --timeout=120 \
           -d /tmp/sre-base-images -o '$BASE_IMAGE_BUNDLE_NAME' '$BASE_IMAGE_ARTIFACT_URL'
       else
-        curl -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
+        curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
           -o '$remote_tar' '$BASE_IMAGE_ARTIFACT_URL'
       fi
     "

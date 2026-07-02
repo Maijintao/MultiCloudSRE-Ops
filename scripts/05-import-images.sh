@@ -90,7 +90,7 @@ ensure_local_images() {
     url="$IMAGE_ARTIFACT_BASE_URL/$bundle"
 
     log "  下载 $bundle"
-    curl -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
+    curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
       -o "$bundle_path" "$url"
 
     log "  解压 $bundle -> $IMAGES_DIR"
@@ -160,7 +160,7 @@ import_images_for_host() {
             --connect-timeout=20 --timeout=120 \
             -d /tmp -o \"\$bundle\" \"$IMAGE_ARTIFACT_BASE_URL/\$bundle\"
         else
-          curl -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
+          curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
             -o \"/tmp/\$bundle\" \"$IMAGE_ARTIFACT_BASE_URL/\$bundle\"
         fi
         tar -xzf \"/tmp/\$bundle\" -C /tmp/sre-images

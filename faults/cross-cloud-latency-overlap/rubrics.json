@@ -1,0 +1,235 @@
+{
+  "positive_points_total": 98,
+  "negative_points_total": -46,
+  "rubrics": [
+    {
+      "criterion": "描述了现象：结账链路和商品查询均出现慢请求，且跨云分布",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "收集了阿里云 checkoutservice 的 chaos 证据",
+      "points": 6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "收集了腾讯云 productcatalogservice 的配置证据",
+      "points": 6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "检查了两云服务状态与对象是否同时存在故障",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "识别 checkoutservice 存在网络时延故障",
+      "points": 6,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 NetworkChaos=1500ms（阿里云 checkoutservice）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别 productcatalogservice 存在额外时延故障",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 EXTRA_LATENCY=1800ms（腾讯云 productcatalogservice）",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "能区分两个故障位于不同云且相互独立",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "故障链路完整：checkout 网络时延影响结账；catalog 额外时延影响商品查询",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "给出修复动作：删除阿里云 checkout NetworkChaos",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出修复动作：移除腾讯云 EXTRA_LATENCY",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "正常性约束：未跨云误删无关 chaos 对象",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:instruction_following"
+      ]
+    },
+    {
+      "criterion": "正常性约束：未误改无关 deployment 配置",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:instruction_following"
+      ]
+    },
+    {
+      "criterion": "响应结构清晰：现象→证据→根因→修复→验证",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:communication_quality"
+      ]
+    },
+    {
+      "criterion": "只检查单一云就给出全局结论",
+      "points": -7,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "将双故障错误归并为单根因",
+      "points": -10,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "只修复 NetworkChaos，遗漏 EXTRA_LATENCY",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只移除 EXTRA_LATENCY，遗漏 NetworkChaos",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "把实际执行恢复或恢复验证作为答案必要条件",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出离谱操作（如跨命名空间批量删除资源）",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:instruction_following"
+      ]
+    },
+    {
+      "criterion": "模型能在跨云双故障并存时逐一隔离根因",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:multi_fault_handling",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "模型排查覆盖阿里与腾讯并能定位对应对象",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:cross_cloud_diagnosis",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "模型以对象状态、配置与访问表现做证据闭环",
+      "points": 6,
+      "tags": [
+        "level:cluster",
+        "cluster:evidence_based_root_cause_tracing",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "模型不被单点线索误导，保持双线并行验证",
+      "points": 6,
+      "tags": [
+        "level:cluster",
+        "cluster:misleading_signal_awareness",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 13 次）",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 16 次）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 19 次）",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    }
+  ],
+  "ideal_call_count": 13
+}

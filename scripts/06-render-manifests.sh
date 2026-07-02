@@ -37,6 +37,7 @@ render_cloud() {
       -e "s/__ALIYUN_IP__/${ALIYUN_IP}/g" \
       -e "s/__TENCENT_IP__/${TENCENT_IP}/g" \
       -e "s/__AWS_IP__/${AWS_IP}/g" \
+      -e "s/__MYSQL_PASSWORD__/${MYSQL_PASSWORD:-sztu172712}/g" \
       "$f" > "$dst_dir/$basename"
     if [[ "$cloud" == "aws" && "$basename" == "paymentservice-svc.yaml" ]]; then
       sed -i '' -e "s/nodePort: 30051/nodePort: ${PAYMENT_SERVICE_NODEPORT}/g" "$dst_dir/$basename" 2>/dev/null \

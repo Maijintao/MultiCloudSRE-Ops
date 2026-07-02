@@ -24,8 +24,8 @@ upload_questions_to() {
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
     cd /opt && tar -xzf /tmp/sre-questions.tar.gz
-    chmod +x /opt/sre-questions/questions/**/inject.sh 2>/dev/null
-    chmod +x /opt/sre-questions/questions/**/recover.sh 2>/dev/null
+    find /opt/sre-questions/questions -name 'inject.sh' -exec chmod +x {} \; 2>/dev/null || true
+    find /opt/sre-questions/questions -name 'recover.sh' -exec chmod +x {} \; 2>/dev/null || true
     rm -f /tmp/sre-questions.tar.gz
     echo '题目数量: '\$(find /opt/sre-questions/questions -name 'case.json' | wc -l)
   "

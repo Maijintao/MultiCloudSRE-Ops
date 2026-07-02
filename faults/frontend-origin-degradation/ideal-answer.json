@@ -1,0 +1,102 @@
+{
+  "fault_info": {
+    "root_cause": "阿里云 frontend 被注入 NetworkChaos 延迟 600ms+抖动 200ms + 丢包 8%，导致前端 origin 响应严重退化。MCP 同时可见多个 chaos 对象（catalog 380ms、recommend 420ms、checkout-db 300ms、CPU 压力），均为噪声，不是前端资源加载失败的主因。",
+    "faulty_clouds": [
+      "aliyun"
+    ],
+    "affected_clouds": [
+      "aliyun"
+    ],
+    "fault_location": {
+      "module": "frontend",
+      "file_path": null,
+      "function_or_config": "NetworkChaos: origin-frontend-delay (600ms) + origin-frontend-loss (8%)",
+      "description": "前端 origin 服务网络延迟和丢包，导致页面加载超时、白屏和静态资源加载失败。"
+    }
+  },
+  "reasoning_process": {
+    "observed_symptoms": [
+      "首页和商品页加载极慢。",
+      "部分静态资源加载失败或出现资源错误。",
+      "阿里云入口最明显。"
+    ],
+    "key_evidence": [
+      {
+        "source": "MCP/K8s: alicloud seat-1 get networkchaos",
+        "content": "origin-frontend-delay: frontend delay 600ms, jitter 200ms; origin-frontend-loss: frontend loss 8%",
+        "conclusion": "前端服务存在网络延迟和丢包。"
+      },
+      {
+        "source": "MCP/K8s: tencent seat-1 get networkchaos",
+        "content": "catalog-stale-read-delay: productcatalogservice delay 380ms",
+        "conclusion": "腾讯云有 1 个噪声 chaos。"
+      },
+      {
+        "source": "MCP/K8s: alicloud seat-1 get networkchaos",
+        "content": "recommend-cache-miss-delay: recommendationservice delay 420ms; checkout-db-connection-jitter: checkoutservice -> mysql-orders delay 300ms; alicloud-node-cpu-pressure: namespace Pod CPU 压力",
+        "conclusion": "阿里云有 3 个噪声 chaos。"
+      },
+      {
+        "source": "MCP/K8s: 查看服务部署和调用关系",
+        "content": "frontend 在页面加载链路上，productcatalogservice/recommendationservice/checkoutservice 不在",
+        "conclusion": "只有 frontend 的延迟会影响页面加载。"
+      }
+    ],
+    "causal_chain": [
+      "origin-frontend-delay 对 frontend 注入 600ms 网络延迟。",
+      "origin-frontend-loss 叠加 8% 丢包，部分资源请求完全失败。",
+      "页面加载超时、白屏和静态资源加载失败。",
+      "其他 chaos（catalog/recommend/checkout-db/cpu）是噪声，不在前端加载链路上。",
+      "因此根因是 origin-frontend-delay 和 origin-frontend-loss，其余 4 个是噪声干扰。"
+    ]
+  },
+  "verification_method": {
+    "verification_commands": [
+      {
+        "cmd": "kubectl --context=alicloud -n seat-1 get networkchaos",
+        "purpose": "查看阿里云 NetworkChaos 配置",
+        "expected_result": "origin-frontend-delay 和 origin-frontend-loss 存在"
+      },
+      {
+        "cmd": "kubectl --context=tencent -n seat-1 get networkchaos",
+        "purpose": "查看腾讯云 NetworkChaos 配置",
+        "expected_result": "catalog-stale-read-delay 存在"
+      }
+    ],
+    "success_criteria": [
+      "识别出 frontend 存在网络延迟和丢包",
+      "识别出 6 个 chaos 对象中的根因和噪声",
+      "排查过程覆盖阿里云和腾讯云"
+    ]
+  },
+  "proposed_resolution": {
+    "suggestion": "删除 origin-frontend-delay 和 origin-frontend-loss 两个 NetworkChaos 对象。",
+    "fix_steps": [
+      "kubectl --context=alicloud -n seat-1 delete networkchaos origin-frontend-delay",
+      "kubectl --context=alicloud -n seat-1 delete networkchaos origin-frontend-loss"
+    ]
+  },
+  "confidence": 0.9,
+  "special_points": [
+    {
+      "point": "6 个 chaos 对象全部指向真实服务，无法仅靠 kubectl 排除噪声",
+      "score": 5
+    },
+    {
+      "point": "噪声服务（productcatalogservice/recommendationservice/checkoutservice）不在前端加载链路",
+      "score": 4
+    },
+    {
+      "point": "必须结合服务调用关系才能区分根因和噪声",
+      "score": 5
+    }
+  ],
+  "tool_process": {
+    "ideal_call_count": 10,
+    "valuable_actions": [
+      "kubectl get networkchaos（三云）查看所有 chaos 对象",
+      "查看 K8s 服务部署和调用关系",
+      "对比 chaos 对象的 target app 和服务调用关系，锁定唯一在链路上的根因"
+    ]
+  }
+}

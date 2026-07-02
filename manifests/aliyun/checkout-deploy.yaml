@@ -34,7 +34,7 @@ spec:
         - name: ORDER_STORE_ADDR
           value: new-orderstore:5080
         - name: PRODUCT_SERVICE_ADDR
-          value: "__TENCENT_IP__:30007"
+          value: "__TENCENT_IP__:30008"
         image: checkout-apm-direct:20260528
         imagePullPolicy: Never
         livenessProbe:

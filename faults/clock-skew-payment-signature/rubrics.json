@@ -1,0 +1,157 @@
+{
+  "positive_points_total": 102,
+  "negative_points_total": -53,
+  "ideal_call_count": 10,
+  "rubrics": [
+    {
+      "criterion": "描述结账支付失败且商品/购物车基本正常的现象",
+      "points": 4,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "查看 AWS 的 TimeChaos 配置",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "识别出 paymentservice 存在时间偏移",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "准确给出 TimeChaos 的具体参数（payment-clock-skew, timeOffset=-10m）",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "查看 paymentservice 日志并识别 timestamp skew/token time window 类错误",
+      "points": 5,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "正确指出根因是 AWS paymentservice 时间漂移，不是 Secret 本身过期",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "解释时间漂移如何导致签名/JWT/时间窗口校验失败",
+      "points": 5,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "说明 checkoutservice 发起请求时签名按真实时间生成，但 paymentservice 用偏移时间校验",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "说明重启 checkoutservice 不能解决问题（时间偏移在 paymentservice 侧）",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "理解概率性故障特征（不是每次都坏）",
+      "points": 4,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "给出了修复建议：删除 TimeChaos payment-clock-skew",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员删除 TimeChaos 后复查 paymentservice 签名时间窗口错误消失，并结合 TimeChaos spec、payment 日志和事件时间线确认时间偏移已解除",
+      "points": 4,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "给出了后续建议（跨云 NTP/时钟偏移监控、签名校验错误分类告警）",
+      "points": 3,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "排查过程覆盖 AWS，能够定位到 paymentservice",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "响应按清晰结构组织：观察现象 -> 收集证据 -> 定位根因 -> 修复建议",
+      "points": 5,
+      "tags": ["level:example", "axis:communication_quality"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 10 次）",
+      "points": 4,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 12 次）",
+      "points": 2,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 15 次）",
+      "points": -3,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "模型能够正确识别时间偏移故障",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:multi_fault_handling", "axis:accuracy"]
+    },
+    {
+      "criterion": "模型的排查过程覆盖 AWS，能够定位到 paymentservice",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:cross_cloud_diagnosis", "axis:completeness"]
+    },
+    {
+      "criterion": "模型不被 Secret/token 过期的表象误导，能继续检查时间偏移",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:misleading_signal_awareness", "axis:context_awareness"]
+    },
+    {
+      "criterion": "模型的排查过程基于实际证据（TimeChaos、日志），而非猜测",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:evidence_based_root_cause_tracing", "axis:accuracy"]
+    },
+    {
+      "criterion": "模型理解时间偏移对签名/校验的影响机制，而非停留在表面错误",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:time_sensitivity", "axis:accuracy"]
+    },
+    {
+      "criterion": "误判为 Secret/token 真实过期并建议轮换密钥",
+      "points": -10,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "只重启 checkoutservice 或 paymentservice 就认为能解决",
+      "points": -6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "遗漏 TimeChaos 对象，未检查 chaos 实验列表",
+      "points": -8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "未检查 paymentservice 日志就下结论",
+      "points": -7,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "把概率性故障说成 100% 确定性失败，或给出完全不合理的根因判断",
+      "points": -5,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "定位到错误服务（如把 paymentservice 的故障定位到 checkoutservice）",
+      "points": -6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "未检查 K8s 配置就下结论",
+      "points": -8,
+      "tags": ["level:example", "axis:completeness"]
+    }
+  ]
+}

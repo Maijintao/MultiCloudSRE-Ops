@@ -131,7 +131,7 @@ def start_background_grading(submission, case, answer, recover_thread, recover_s
     thread = threading.Thread(
         target=run_background_grading,
         args=(submission, case, answer, recover_thread, recover_state),
-        daemon=True,
+        daemon=False,
     )
     thread.start()
     return thread

@@ -1,0 +1,172 @@
+{
+  "positive_points_total": 109,
+  "negative_points_total": -49,
+  "ideal_call_count": 10,
+  "rubrics": [
+    {
+      "criterion": "描述了观察到的故障现象（页面加载慢、资源加载失败、部分内容显示异常）",
+      "points": 4,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "使用 MCP 查看了 chaos 对象列表",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "观察到 6 个 chaos 对象，分布在不同服务和云上",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "识别出 origin-frontend-delay 和 origin-frontend-loss 对应 frontend",
+      "points": 6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "准确给出 origin-frontend-delay 的具体参数（delay 600ms, jitter 200ms, 阿里云）",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "准确给出 origin-frontend-loss 的具体参数（loss 8%, 阿里云）",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "识别 catalog-stale-read-delay 对应 productcatalogservice（噪声）",
+      "points": 3,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "识别 recommend-cache-miss-delay 对应 recommendationservice（噪声）",
+      "points": 3,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "识别 checkout-db-connection-jitter 对应 checkoutservice -> mysql-orders（噪声）",
+      "points": 3,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "识别 alicloud-node-cpu-pressure 对应 namespace Pod CPU 压力（噪声）",
+      "points": 3,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "理解噪声服务（productcatalogservice/recommendationservice/checkoutservice）不在前端加载链路上",
+      "points": 6,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "说明 frontend 延迟 + 丢包 → 页面加载慢 + 资源加载失败的因果链",
+      "points": 5,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "解释噪声服务不在前端加载链路上，其延迟不影响页面加载",
+      "points": 5,
+      "tags": ["level:example", "axis:context_awareness"]
+    },
+    {
+      "criterion": "给出修复建议：删除 origin-frontend-delay 和 origin-frontend-loss",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "修复建议包含具体 kubectl delete 命令",
+      "points": 4,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "说明了噪声 chaos 不需要删除（不影响主路径）",
+      "points": 4,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "排查过程覆盖阿里云和腾讯云，能够跨云收集证据",
+      "points": 5,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "响应按清晰结构组织：现象 → 证据 → 根因 → 修复",
+      "points": 5,
+      "tags": ["level:example", "axis:communication_quality"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 10 次）",
+      "points": 4,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 12 次）",
+      "points": 2,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 15 次）",
+      "points": -3,
+      "tags": ["level:example", "axis:efficiency"]
+    },
+    {
+      "criterion": "模型能够正确识别根因和噪声，不被多个 chaos 对象误导",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:multi_fault_handling", "axis:accuracy"]
+    },
+    {
+      "criterion": "模型的排查过程覆盖阿里云和腾讯云，能够跨云收集证据",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:cross_cloud_diagnosis", "axis:completeness"]
+    },
+    {
+      "criterion": "模型不被噪声 chaos 对象误导，能结合服务调用关系区分根因",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:misleading_signal_awareness", "axis:context_awareness"]
+    },
+    {
+      "criterion": "模型的排查过程基于实际证据（NetworkChaos、K8s 配置），而非猜测",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:evidence_based_root_cause_tracing", "axis:accuracy"]
+    },
+    {
+      "criterion": "面对多个指向真实服务的 chaos 对象，模型能结合服务调用关系逐个排除",
+      "points": 5,
+      "tags": ["level:cluster", "cluster:noise_filtering_capability", "axis:context_awareness"]
+    },
+    {
+      "criterion": "误判为单纯 CDN 配置问题（实际是前端 origin 网络退化）",
+      "points": -8,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "误判噪声 chaos（catalog/recommend/checkout-db/cpu）为根因",
+      "points": -6,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "遗漏 NetworkChaos 对象，未检查 chaos 实验列表",
+      "points": -8,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "未检查 K8s 服务部署就下结论",
+      "points": -7,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "仅查看单一云的证据就给出跨云诊断，未覆盖阿里云和腾讯云",
+      "points": -6,
+      "tags": ["level:example", "axis:completeness"]
+    },
+    {
+      "criterion": "把所有 6 个 chaos 都当成需要修复的问题",
+      "points": -5,
+      "tags": ["level:example", "axis:accuracy"]
+    },
+    {
+      "criterion": "定位到错误云（非阿里云）",
+      "points": -6,
+      "tags": ["level:example", "axis:accuracy"]
+    }
+  ]
+}

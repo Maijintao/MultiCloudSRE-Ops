@@ -16,7 +16,7 @@ spec:
       containers:
       - env:
         - name: MYSQL_ROOT_PASSWORD
-          value: "sztu172712"
+          value: "__MYSQL_PASSWORD__"
         image: mysql:8.0
         imagePullPolicy: IfNotPresent
         name: mysql

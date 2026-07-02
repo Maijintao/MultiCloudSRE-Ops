@@ -1,0 +1,290 @@
+{
+  "positive_points_total": 95,
+  "negative_points_total": -46,
+  "rubrics": [
+    {
+      "criterion": "描述了观察到的故障现象（商品页面能打开但图片全部加载失败/403/破图，文字和价格正常）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "通过 curl 或浏览器 DevTools 确认图片请求返回 403，而非网络超时或 DNS 错误",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了 403 响应头，发现 X-Asset-Policy-Decision: deny-prefix 和 X-Asset-Prefix 信息",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了 ConfigMap object-storage-policy，发现 denyPrefixes 包含 oss://shop-assets/products/2026/*",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "查看了 ConfigMap catalog-asset-routes，发现 asset_prefix 为 /assets/products/2026/",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 productcatalogservice 的 PRODUCT_IMAGE_PREFIX 环境变量被设置为 /assets/products/2026/",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 new-gatewayservice 的 ASSET_PROXY_BASE 被设置为 asset-proxy 服务地址",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 asset-proxy 是注入的 nginx 代理组件，负责执行 deny 策略",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确指出故障仅限于腾讯云集群",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "正确理解'页面正常但图片 403'是对象存储/CDN 策略问题的典型特征",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "通过注解 sre-test/fault=object-storage-prefix-deny-assets-403 识别出注入痕迹",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "识别出 allowPrefixes 仅包含 2025 和 public 前缀，与当前使用的 2026 前缀不匹配",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "正确追踪因果链：PRODUCT_IMAGE_PREFIX 改为 2026 → 商品 API 返回 2026 图片 URL → asset-proxy deny 策略拒绝 → 403",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "正确追踪因果链：new-gatewayservice ASSET_PROXY_BASE 指向 asset-proxy → 资产请求被转发到 deny 代理",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：删除或修改 object-storage-policy 的 denyPrefixes",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：恢复 productcatalogservice 的 PRODUCT_IMAGE_PREFIX 环境变量",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：清理 new-gatewayservice 的 ASSET_PROXY_BASE 环境变量",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：删除注入的 asset-proxy deployment 和 service",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员确认图片加载恢复正常，403 错误不再出现",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员确认 productcatalogservice 和 new-gatewayservice rollout 完成且无异常",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了合理的后续建议（如对象存储策略变更审计、asset URL 可用性监控）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "响应按清晰结构组织：观察现象 → 收集证据 → 定位根因 → 修复步骤 → 验证",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:communication_quality"
+      ]
+    },
+    {
+      "criterion": "误判为 CDN 配置问题或前端代码 bug，而实际是对象存储 deny 策略与 asset 前缀不匹配",
+      "points": -7,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "未检查 ConfigMap object-storage-policy 和 catalog-asset-routes 就下结论",
+      "points": -8,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "误判为 DNS 或网络问题，未注意到 403 响应码和 deny-prefix 响应头",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "未发现 asset-proxy 是注入的组件，将其当作系统原有服务处理",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "将问题归因于 productcatalogservice 代码 bug，而未检查环境变量和 ConfigMap 配置",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "修复方案仅修改 denyPrefixes 但未清理注入的 asset-proxy 和环境变量，导致残留",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "在错误的云集群（阿里云或 AWS）上排查此问题，故障仅在腾讯云上",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出'页面正常但静态资源 403'的模式，直接定位到对象存储/代理策略层而非网络或应用层",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:storage_policy_pattern_recognition",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "模型能够通过响应头信息（X-Asset-Policy-Decision）快速定位策略决策点，而非盲目检查所有组件",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:header_based_diagnosis",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "模型能够追踪完整的配置变更链：ConfigMap → 环境变量 → 代理策略，理解多层配置注入的关联",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:multi_config_correlation",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 12 次）",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 15 次）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 18 次）",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    }
+  ],
+  "ideal_call_count": 12
+}

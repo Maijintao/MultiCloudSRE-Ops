@@ -122,14 +122,53 @@ generate_for() {
 
 log "生成服务器角色 kubeconfig 和 Chaos Dashboard token..."
 
+# 按唯一 IP 去重，避免同 IP 重复生成（如 server1 和 server2 共享 IP）
+# 兼容 bash 3.x，不用 declare -A
+generated_ips=""
 for role in server1 server2 server3; do
-  generate_for \
-    "$role" \
-    "$(role_ip "$role")" \
-    "$(role_user "$role")" \
-    "$(role_pass_var "$role")" \
-    "$(role_key_var "$role")" \
-    "$(role_label "$role")"
+  ip="$(role_ip "$role")"
+  # 精确匹配 IP（避免子串误匹配，如 10.0.0.1 匹配 10.0.0.10）
+  prev_role=""
+  already=0
+  for seen in $generated_ips; do
+    [[ "$seen" == "$ip" ]] && already=1 && break
+  done
+  if [[ $already -eq 1 ]]; then
+    # 找到之前生成过的同 IP 角色
+    for r in server1 server2 server3; do
+      rip="$(role_ip "$r")"
+      if [[ "$rip" == "$ip" && "$r" != "$role" ]]; then
+        if [[ -f "$GENERATED_DIR/${r}-readonly.kubeconfig" ]]; then
+          prev_role="$r"
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [[ -n "$prev_role" ]]; then
+    log "  $role 与 $prev_role 共享 IP ($ip)，复用凭据..."
+    for suffix in readonly.kubeconfig injector.kubeconfig chaos-dashboard.token; do
+      cp "$GENERATED_DIR/${prev_role}-${suffix}" "$GENERATED_DIR/${role}-${suffix}"
+    done
+    chmod 600 "$GENERATED_DIR/${role}-readonly.kubeconfig" \
+      "$GENERATED_DIR/${role}-injector.kubeconfig" \
+      "$GENERATED_DIR/${role}-chaos-dashboard.token"
+
+    if [[ "${UPDATE_LOCAL_KUBECONFIG:-true}" == "true" ]]; then
+      merge_local_kubeconfig "$GENERATED_DIR/${role}-readonly.kubeconfig"
+      merge_local_kubeconfig "$GENERATED_DIR/${role}-injector.kubeconfig"
+    fi
+  else
+    generate_for \
+      "$role" \
+      "$ip" \
+      "$(role_user "$role")" \
+      "$(role_pass_var "$role")" \
+      "$(role_key_var "$role")" \
+      "$(role_label "$role")"
+    generated_ips="$generated_ips $ip"
+  fi
 done
 
 build_combined_kubeconfig "readonly" "$GENERATED_DIR/config-readonly.yaml"

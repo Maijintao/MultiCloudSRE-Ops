@@ -40,7 +40,13 @@ from .model_config import (
     update_user_grader_config,
     update_user_profile,
 )
+import hmac
+
 from .security import make_token, verify_password, verify_token
+
+
+# Dummy hash for timing-safe login when user is not found
+_DUMMY_HASH = "pbkdf2:sha256:260000$dummy$0000000000000000000000000000000000000000000000000000000000000000"
 from .submissions import (
     create_submission,
     create_test_set_submissions,
@@ -555,7 +561,11 @@ class Handler(SimpleHTTPRequestHandler):
             password = str(payload.get("password", ""))
             with db.connect() as conn:
                 row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-            if not row or row["disabled"] or not verify_password(password, row["password_hash"]):
+            if row is None or row["disabled"]:
+                verify_password(password, _DUMMY_HASH)  # timing-safe
+                json_response(self, {"error": "invalid username or password"}, HTTPStatus.UNAUTHORIZED)
+                return
+            if not verify_password(password, row["password_hash"]):
                 json_response(self, {"error": "invalid username or password"}, HTTPStatus.UNAUTHORIZED)
                 return
             user = public_session_user(row)
@@ -566,7 +576,7 @@ class Handler(SimpleHTTPRequestHandler):
             username = str(payload.get("username", "")).strip()
             password = str(payload.get("password", ""))
             invite_code = str(payload.get("invite_code", "")).strip()
-            if invite_code != settings.REGISTRATION_INVITE_CODE:
+            if not hmac.compare_digest(invite_code, settings.REGISTRATION_INVITE_CODE):
                 json_response(self, {"error": "invalid invite code"}, HTTPStatus.FORBIDDEN)
                 return
             try:

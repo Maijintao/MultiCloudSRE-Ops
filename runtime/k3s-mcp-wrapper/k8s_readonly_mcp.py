@@ -67,7 +67,7 @@ def _contexts_text() -> str:
 
 def context_hint(context: Optional[str]) -> str:
     value = str(context or "").strip() or "（空）"
-    return f'当前只开放以下 context: {_contexts_text()}。你传入的 "{value}" 不可用，请改用 context="server1"、"server2" 或 "server3"。'
+    return f'当前只开放以下 context: {_contexts_text()}。你传入的 "{value}" 不可用，请改用 context="server1"、"server2"、"server3"、"alicloud"、"tencent" 或 "aws"。'
 
 
 def namespace_hint(namespace: Optional[str]) -> str:

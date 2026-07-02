@@ -31,6 +31,11 @@ CLOUDS = {
         "user": os.environ.get("OJ_MULTI_CLOUD_MCP_TENCENT_USER") or os.environ.get("MC_TENCENT_USER", "ojobserver"),
         "port": os.environ.get("MC_TENCENT_PORT", "22"),
     },
+    "aws": {
+        "host": os.environ.get("MC_AWS_HOST", "192.0.2.10"),
+        "user": os.environ.get("OJ_MULTI_CLOUD_MCP_AWS_USER") or os.environ.get("MC_AWS_USER", "ubuntu"),
+        "port": os.environ.get("MC_AWS_PORT", "22"),
+    },
 }
 APP_DIR = os.environ.get("MC_ROBOT_APP_DIR", "/opt/mc-robot-shop")
 SSH_KEY = (
@@ -171,7 +176,7 @@ def checked_cloud(cloud: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     aliases = {"ali": "aliyun", "alibaba": "aliyun", "tx": "tencent", "tencentcloud": "tencent"}
     value = aliases.get(value, value)
     if value not in CLOUDS:
-        return None, 'cloud must be "aliyun" or "tencent"'
+        return None, 'cloud must be "aliyun", "tencent", or "aws"'
     return value, None
 
 
@@ -297,6 +302,7 @@ def run_opsctl(cloud: Optional[str], args: list[str]) -> str:
         f"MC_ROBOT_APP_DIR={shlex.quote(APP_DIR)} "
         f"MC_ALIYUN_HOST={shlex.quote(CLOUDS['aliyun']['host'])} "
         f"MC_TENCENT_HOST={shlex.quote(CLOUDS['tencent']['host'])} "
+        f"MC_AWS_HOST={shlex.quote(CLOUDS['aws']['host'])} "
         f"opsctl {quoted_args}"
     )
     return run_ssh(checked, command)

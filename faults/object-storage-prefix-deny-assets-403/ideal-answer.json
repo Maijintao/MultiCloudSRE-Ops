@@ -1,0 +1,126 @@
+{
+  "fault_info": {
+    "root_cause": "productcatalogservice 被修改为使用 /assets/products/2026/ 前缀发布图片 URL，但腾讯云上的 asset-proxy（nginx）配置了对象存储策略，其 denyPrefixes 包含 oss://shop-assets/products/2026/*，导致所有 2026 前缀的 asset 请求返回 403。",
+    "faulty_clouds": [
+      "tencent"
+    ],
+    "affected_clouds": [
+      "tencent"
+    ],
+    "fault_location": {
+      "module": "object-storage-policy / asset-proxy",
+      "file_path": null,
+      "function_or_config": "ConfigMap object-storage-policy (denyPrefixes), ConfigMap catalog-asset-routes (asset_prefix), deploy productcatalogservice (PRODUCT_IMAGE_PREFIX env), deploy new-gatewayservice (ASSET_PROXY_BASE env), deploy asset-proxy (nginx deny config)",
+      "description": "腾讯云 seat-1 namespace 中，productcatalogservice 的 PRODUCT_IMAGE_PREFIX 被设置为 /assets/products/2026/，new-gatewayservice 的 ASSET_PROXY_BASE 指向 asset-proxy 服务，而 asset-proxy 的 nginx 配置对 /assets/products/2026/ 路径返回 403（deny-prefix）。ConfigMap object-storage-policy 的 denyPrefixes 字段包含 oss://shop-assets/products/2026/*。"
+    }
+  },
+  "reasoning_process": {
+    "observed_symptoms": [
+      "商品页面能打开，但图片全部加载失败（403 或破图）。",
+      "文字信息、价格、购物车功能正常。",
+      "只有图片和样式类资源受影响。",
+      "Pod 状态均为 Running，服务本身无报错。"
+    ],
+    "key_evidence": [
+      {
+        "source": "curl 访问商品图片 URL",
+        "content": "返回 403，响应头包含 X-Asset-Policy-Decision: deny-prefix, X-Asset-Prefix: oss://shop-assets/products/2026/。",
+        "conclusion": "资产请求被对象存储策略拒绝，而非网络或 DNS 问题。"
+      },
+      {
+        "source": "kubectl get configmap object-storage-policy -n seat-1 -o yaml",
+        "content": "denyPrefixes 字段包含 oss://shop-assets/products/2026/*，而 allowPrefixes 仅包含 2025 和 public 前缀。",
+        "conclusion": "对象存储策略明确拒绝了 2026 前缀。"
+      },
+      {
+        "source": "kubectl get configmap catalog-asset-routes -n seat-1 -o yaml",
+        "content": "asset_prefix 为 /assets/products/2026/，image_base_url 指向 2026 路径。",
+        "conclusion": "productcatalogservice 正在使用 2026 前缀发布图片 URL，与 denyPrefixes 冲突。"
+      },
+      {
+        "source": "kubectl get deploy productcatalogservice -n seat-1 -o yaml",
+        "content": "环境变量 PRODUCT_IMAGE_PREFIX=/assets/products/2026/，注解 sre-test/fault=object-storage-prefix-deny-assets-403。",
+        "conclusion": "productcatalogservice 被注入了故障配置。"
+      },
+      {
+        "source": "kubectl get deploy asset-proxy -n seat-1 -o yaml",
+        "content": "asset-proxy 使用 nginx 镜像，挂载 object-storage-policy ConfigMap 作为 nginx 配置，注解 sre-test/fault=object-storage-prefix-deny-assets-403。",
+        "conclusion": "asset-proxy 是执行 deny 策略的组件。"
+      }
+    ],
+    "causal_chain": [
+      "productcatalogservice 的 PRODUCT_IMAGE_PREFIX 被改为 /assets/products/2026/。",
+      "商品 API 返回的图片 URL 均包含 /assets/products/2026/ 路径。",
+      "new-gatewayservice 的 ASSET_PROXY_BASE 被设置为 asset-proxy 服务地址，资产请求被转发到 asset-proxy。",
+      "asset-proxy（nginx）的 default.conf 对 /assets/products/2026/ 路径返回 403（deny-prefix）。",
+      "前端加载图片时收到 403 → 图片全部破图/空白。"
+    ]
+  },
+  "verification_method": {
+    "verification_commands": [
+      {
+        "cmd": "kubectl --context=tencent get configmap object-storage-policy -n seat-1 -o yaml",
+        "purpose": "查看对象存储策略中的 denyPrefixes 配置。",
+        "expected_result": "denyPrefixes 包含 oss://shop-assets/products/2026/*。"
+      },
+      {
+        "cmd": "kubectl --context=tencent get configmap catalog-asset-routes -n seat-1 -o yaml",
+        "purpose": "查看商品资产路由中的 asset_prefix。",
+        "expected_result": "asset_prefix 为 /assets/products/2026/。"
+      },
+      {
+        "cmd": "kubectl --context=tencent get deploy productcatalogservice -n seat-1 -o jsonpath='{.spec.template.spec.containers[0].env}'",
+        "purpose": "检查 productcatalogservice 的环境变量。",
+        "expected_result": "PRODUCT_IMAGE_PREFIX=/assets/products/2026/。"
+      },
+      {
+        "cmd": "kubectl --context=tencent get deploy asset-proxy -n seat-1 -o yaml",
+        "purpose": "检查 asset-proxy 的 nginx 配置和注解。",
+        "expected_result": "注解 sre-test/fault=object-storage-prefix-deny-assets-403，nginx 配置对 2026 路径返回 403。"
+      }
+    ],
+    "success_criteria": [
+      "object-storage-policy ConfigMap 恢复（denyPrefixes 不再包含 2026 前缀，或 ConfigMap 被恢复为备份状态）。",
+      "catalog-asset-routes ConfigMap 恢复为备份状态。",
+      "productcatalogservice 和 new-gatewayservice 环境变量恢复。",
+      "asset-proxy deployment 和 service 恢复（或被删除，取决于备份状态）。",
+      "商品图片能正常加载，不再返回 403。"
+    ]
+  },
+  "proposed_resolution": {
+    "suggestion": "恢复腾讯云 seat-1 namespace 中被注入故障的资源。运行 recover.sh 可从备份 ConfigMap 恢复所有资源。如果手动修复：删除或修改 object-storage-policy 中的 denyPrefixes，恢复 productcatalogservice 的 PRODUCT_IMAGE_PREFIX 为正确值，清理注入的 asset-proxy 资源。建议后续增加对象存储策略变更审计和 asset URL 可用性监控。",
+    "fix_steps": [
+      "运行 recover.sh 自动恢复所有备份资源（catalog-asset-routes、object-storage-policy、productcatalogservice、new-gatewayservice、asset-proxy）。",
+      "或手动执行：kubectl --context=tencent delete configmap object-storage-policy -n seat-1 删除拒绝策略。",
+      "手动执行：kubectl --context=tencent delete configmap catalog-asset-routes -n seat-1 删除错误资产路由。",
+      "手动执行：kubectl --context=tencent set env deploy/productcatalogservice CATALOG_ASSET_ROUTES- PRODUCT_IMAGE_PREFIX- 清理环境变量。",
+      "手动执行：kubectl --context=tencent set env deploy/new-gatewayservice ASSET_PROXY_BASE- 清理环境变量。",
+      "手动执行：kubectl --context=tencent delete deploy asset-proxy -n seat-1 && kubectl --context=tencent delete service asset-proxy -n seat-1 清理注入的代理。",
+      "等待 deployment rollout 完成后验证图片加载恢复正常。"
+    ]
+  },
+  "confidence": 0.95,
+  "special_points": [
+    {
+      "point": "识别出'页面正常但图片 403'是对象存储策略/CDN 策略问题的典型特征，而非网络或 DNS 问题",
+      "score": 4
+    },
+    {
+      "point": "通过检查响应头 X-Asset-Policy-Decision 和 X-Asset-Prefix 快速定位到 deny-prefix 策略",
+      "score": 3
+    },
+    {
+      "point": "发现 asset-proxy 是注入的组件（通过注解 sre-test/fault 识别），而非系统原有服务",
+      "score": 3
+    }
+  ],
+  "tool_process": {
+    "ideal_call_count": 12,
+    "valuable_actions": [
+      "kubectl get pods 确认服务状态正常",
+      "curl 访问图片 URL 确认 403 及响应头",
+      "kubectl get configmap 查看 object-storage-policy 和 catalog-asset-routes",
+      "kubectl get deploy 查看环境变量和注解"
+    ]
+  }
+}

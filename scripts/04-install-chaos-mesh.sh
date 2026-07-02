@@ -28,7 +28,14 @@ install_chaos_mesh() {
 
     # 安装 helm（如果没有）
     if ! command -v helm &>/dev/null; then
-      curl -sfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | ${sudo_prefix}bash
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 -o /tmp/get-helm-3.sh
+      if [[ -s /tmp/get-helm-3.sh ]]; then
+        ${sudo_prefix}bash /tmp/get-helm-3.sh
+        rm -f /tmp/get-helm-3.sh
+      else
+        echo "ERROR: Failed to download helm install script" >&2
+        # continue anyway as helm might already be installed
+      fi
     fi
 
     # 添加 chaos-mesh repo

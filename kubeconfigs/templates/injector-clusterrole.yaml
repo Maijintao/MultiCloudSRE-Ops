@@ -3,17 +3,27 @@ kind: ClusterRole
 metadata:
   name: sre-injector
 rules:
-  # 读权限（同 readonly）
+  # 读权限
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "endpoints", "configmaps", "namespaces", "events", "nodes"]
+    resources: ["pods", "pods/log", "services", "endpoints", "namespaces", "events", "nodes",
+                "serviceaccounts"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
     verbs: ["get", "list", "watch"]
-  # 注入权限：可以 patch/update deployments 和 pods
+  # 注入权限：configmaps（备份）、secrets（凭证轮换）、services（selector 切换）
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["patch", "update"]
+    resources: ["deployments", "deployments/scale", "deployments/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["delete"]

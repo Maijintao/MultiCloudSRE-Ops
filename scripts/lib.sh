@@ -23,20 +23,43 @@ ssh_exec() {
   fi
 }
 
-# 三台服务器并发 SSH 执行
+role_upper() {
+  case "$1" in
+    server1) echo "SERVER1" ;;
+    server2) echo "SERVER2" ;;
+    server3) echo "SERVER3" ;;
+  esac
+}
+
+# 三台服务器并发 SSH 执行（自动去重同 IP）
 ssh_all_parallel() {
   local cmd="$@"
-  ssh_exec "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" "$cmd" &
-  local pid1=$!
-  ssh_exec "$SERVER2_IP" "$SERVER2_USER" "SERVER2_PASS" "SERVER2_KEY" "$cmd" &
-  local pid2=$!
-  ssh_exec "$SERVER3_IP" "$SERVER3_USER" "SERVER3_PASS" "SERVER3_KEY" "$cmd" &
-  local pid3=$!
+  local seen_ips=""
+  local pids=()
+
+  for role in server1 server2 server3; do
+    local ip_var="$(role_upper "$role")_IP"
+    local user_var="$(role_upper "$role")_USER"
+    local pass_var="$(role_upper "$role")_PASS"
+    local key_var="$(role_upper "$role")_KEY"
+    local ip="${!ip_var}"
+
+    # IP dedup
+    local already=0
+    for seen in $seen_ips; do
+      [[ "$seen" == "$ip" ]] && already=1 && break
+    done
+    [[ $already -eq 1 ]] && continue
+    seen_ips="$seen_ips $ip"
+
+    ssh_exec "$ip" "${!user_var}" "$pass_var" "$key_var" "$cmd" &
+    pids+=($!)
+  done
 
   local fail=0
-  wait $pid1 || { err "服务器1执行失败"; fail=1; }
-  wait $pid2 || { err "服务器2执行失败"; fail=1; }
-  wait $pid3 || { err "服务器3执行失败"; fail=1; }
+  for pid in "${pids[@]}"; do
+    wait $pid || fail=1
+  done
   return $fail
 }
 

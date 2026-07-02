@@ -12,7 +12,7 @@ OPSCTL = "/usr/local/bin/opsctl"
 APP_DIR = "/opt/mc-robot-shop"
 ZERO_ARG_COMMANDS = {"targets", "help", "-h", "--help"}
 SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
-ALLOWED_ENV_KEYS = {"MC_ROBOT_CLOUD", "MC_ROBOT_APP_DIR", "MC_ALIYUN_HOST", "MC_TENCENT_HOST"}
+ALLOWED_ENV_KEYS = {"MC_ROBOT_CLOUD", "MC_ROBOT_APP_DIR", "MC_ALIYUN_HOST", "MC_TENCENT_HOST", "MC_AWS_HOST"}
 
 
 def deny(message="command not allowed"):
@@ -35,7 +35,7 @@ def parse_request():
         key, value = tokens.pop(0).split("=", 1)
         if key not in ALLOWED_ENV_KEYS:
             deny("environment override not allowed")
-        if key in {"MC_ALIYUN_HOST", "MC_TENCENT_HOST"} and not SAFE_HOST.fullmatch(value):
+        if key in {"MC_ALIYUN_HOST", "MC_TENCENT_HOST", "MC_AWS_HOST"} and not SAFE_HOST.fullmatch(value):
             deny("target host override is invalid")
         env[key] = value
     if not tokens or tokens[0] not in {"opsctl", OPSCTL}:
@@ -88,8 +88,8 @@ def validate_args(args):
 def main():
     env_overrides, requested_args = parse_request()
     cloud = env_overrides.get("MC_ROBOT_CLOUD", "").strip().lower()
-    if cloud not in {"aliyun", "tencent"}:
-        deny("cloud must be aliyun or tencent")
+    if cloud not in {"aliyun", "tencent", "aws"}:
+        deny("cloud must be aliyun, tencent, or aws")
     if env_overrides.get("MC_ROBOT_APP_DIR", APP_DIR) != APP_DIR:
         deny("application directory override not allowed")
     clean_env = {
@@ -100,6 +100,7 @@ def main():
         "MC_ROBOT_APP_DIR": APP_DIR,
         "MC_ALIYUN_HOST": env_overrides.get("MC_ALIYUN_HOST", ""),
         "MC_TENCENT_HOST": env_overrides.get("MC_TENCENT_HOST", ""),
+        "MC_AWS_HOST": env_overrides.get("MC_AWS_HOST", ""),
     }
     completed = subprocess.run(
         ["sudo", "-n", OPSCTL, *validate_args(requested_args)],

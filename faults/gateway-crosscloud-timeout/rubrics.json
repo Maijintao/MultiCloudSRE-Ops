@@ -1,0 +1,324 @@
+{
+  "positive_points_total": 97,
+  "negative_points_total": -56,
+  "ideal_call_count": 10,
+  "rubrics": [
+    {
+      "criterion": "描述了观察到的故障现象（入口/API 偶发 502/504，刷新可能恢复，商品浏览多数正常）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "使用 RUM 确认真实用户侧 5xx/接口耗时尖刺和影响范围",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了腾讯云 new-gatewayservice 日志，发现跨云连接超时或 reset",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了腾讯云 NetworkChaos 实验列表",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "识别出 gw-to-aws-order-delay（延迟 400ms, jitter 150ms）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 NetworkChaos 的具体参数（delay 400ms, jitter 150ms, correlation 70）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 gw-to-aws-order-loss（丢包 12%）",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 NetworkChaos loss 的具体参数（loss 12%, correlation 50）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "查看了腾讯云 StressChaos 实验列表",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "识别出 tencent-global-cpu-stress（mode: all, load: 50）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了 new-gatewayservice 环境变量",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "识别出 UPSTREAM_TIMEOUT=500ms",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 MAX_RETRIES=0",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "对比延迟值（400±150ms=550ms）和超时值（500ms），判断超时配置不合理",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别 StressChaos 是干扰项，CPU 压力不是主因",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "解释延迟+抖动（550ms）超过超时阈值（500ms）导致偶发失败",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "解释 MAX_RETRIES=0 禁用重试是放大器",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "正确指出根因是跨云延迟/抖动/丢包与 gateway timeout/retry 配置叠加，而不是 StressChaos CPU 压力",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "说明延迟、丢包和超时收紧三者叠加才能导致问题，单独处理一层不足以闭环",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "给出了修复建议：删除 NetworkChaos gw-to-aws-order-delay",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了修复建议：删除 NetworkChaos gw-to-aws-order-loss",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了修复建议：恢复 UPSTREAM_TIMEOUT 和 MAX_RETRIES",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "响应按清晰结构组织：观察现象 -> 收集证据 -> 定位根因 -> 修复建议",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:communication_quality"
+      ]
+    },
+    {
+      "criterion": "模型能够把 gateway、NetworkChaos、env 配置串成一条证据链",
+      "points": 4,
+      "tags": [
+        "level:cluster",
+        "cluster:queueing_reasoning",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "模型会跨云对比，确认异常范围主要落在腾讯云 gateway 到 AWS 链路",
+      "points": 4,
+      "tags": [
+        "level:cluster",
+        "cluster:cross_cloud_diagnosis",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "模型不被 StressChaos 误导，能继续检查 NetworkChaos 和 env 配置",
+      "points": 4,
+      "tags": [
+        "level:cluster",
+        "cluster:misleading_signal_awareness",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "模型的排查过程基于实际证据（RUM、NetworkChaos、env、logs），而非猜测",
+      "points": 4,
+      "tags": [
+        "level:cluster",
+        "cluster:evidence_based_root_cause_tracing",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "模型能正确处理多层叠加故障而非只停在单点",
+      "points": 4,
+      "tags": [
+        "level:cluster",
+        "cluster:multi_fault_handling",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 10 次）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 13 次）",
+      "points": 1,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 15 次）",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "只看 StressChaos 就下结论是 CPU 压力问题",
+      "points": -10,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "只看 NetworkChaos 就下结论，不对比延迟值和超时值",
+      "points": -8,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "未检查 env 配置（UPSTREAM_TIMEOUT、MAX_RETRIES）",
+      "points": -8,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "遗漏 NetworkChaos gw-to-aws-order-loss",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "把问题误判为 CDN 配置或 frontend 问题",
+      "points": -7,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "只重启 gateway Pod，不处理 Chaos 和 env",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "把概率性超时说成 100% 确定性失败",
+      "points": -2,
+      "tags": [
+        "level:example",
+        "axis:normality"
+      ]
+    },
+    {
+      "criterion": "定位到错误云（非腾讯云）",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    }
+  ]
+}

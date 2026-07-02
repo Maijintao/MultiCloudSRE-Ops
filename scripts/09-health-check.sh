@@ -58,9 +58,21 @@ check_token_file() {
 }
 
 log "── Pod 状态 ──"
-for role in server1 server2 server3; do
-  log "  $(role_label "$role"):"
+for role in $(unique_role_hosts); do
+  log "  $(role_label "$role") ($(role_ip "$role")):"
   kubectl_for "$role" "get pods -n seat-1 --no-headers 2>/dev/null | head -20" || true
+
+  # 检查是否有非 Ready Pod
+  not_ready_output=$(kubectl_for "$role" "get pods -n seat-1 --no-headers 2>/dev/null | grep -v ' Running \| Completed ' | wc -l" 2>/dev/null) || {
+    err "  [FAIL] $(role_ip "$role") SSH/kubectl 连接失败"
+    fail_count=$((fail_count + 1))
+    continue
+  }
+  not_ready=$(echo "$not_ready_output" | tr -d ' ')
+  if [[ "$not_ready" -gt 0 ]]; then
+    err "  [FAIL] $(role_ip "$role") 有 $not_ready 个 Pod 未处于 Running 状态"
+    fail_count=$((fail_count + 1))
+  fi
 done
 
 log ""

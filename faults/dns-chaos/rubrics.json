@@ -1,0 +1,323 @@
+{
+  "positive_points_total": 103,
+  "negative_points_total": -51,
+  "rubrics": [
+    {
+      "criterion": "描述了观察到的故障现象（商品页面有时能打开有时不可用、支付超时、推荐时有时无）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了各服务日志，确认连接下游服务失败的具体错误（DNS 解析失败、连接超时等）",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "使用 kubectl get dnschaos 查看了三云的 DNS 混沌实验",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "结合 DNSChaos 配置、服务日志和 events 交叉验证 DNS 解析异常，而非只看 pod 状态",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "查看了 pod 状态确认服务正常运行（Running）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "识别出 productcatalogservice 存在 DNS 解析问题",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 productcatalogservice DNSChaos 的具体参数（action: error）和部署云（腾讯云）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 paymentservice 存在 DNS 解析问题",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 paymentservice DNSChaos 的具体参数（action: random，延迟 30 秒生效）和部署云（AWS）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 recommendationservice 的 DNS 故障已自愈",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "准确给出 recommendationservice DNSChaos 的具体参数（action: random，duration: 10s）和部署云（阿里云）",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "正确理解'pod 状态正常但服务不可用'是 DNS 问题的典型特征",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "识别出 paymentservice 的 DNS 故障延迟 30 秒生效，理解时间窗口特征",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "识别出 recommendationservice 的 DNS 故障已自愈但可能有缓存残留",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "正确追踪因果链：DNS 解析错误 → 服务无法连接下游 → 功能失败",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "正确追踪因果链：paymentservice DNS 返回随机 IP → 连接随机地址 → 支付超时或失败",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：删除腾讯云 DNSChaos",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：删除 AWS DNSChaos",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "给出了具体可执行的修复步骤：删除阿里云 DNSChaos（已自愈但需确认清理）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员确认 DNS 解析相关错误不再出现在服务日志或 events 中",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员确认受影响服务的下游调用错误消失，Pod/Endpoint 状态保持正常",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "只读交接建议：建议管理员确认商品、支付、推荐链路对应的后端日志和状态恢复正常",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "提到了 DNS 缓存可能导致问题持续，需要等待缓存过期或重启 CoreDNS",
+      "points": 3,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "给出了合理的后续建议（如配置 DNS 解析监控告警、CoreDNS 健康检查）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "响应按清晰结构组织：观察现象 → 收集证据 → 定位根因 → 修复步骤 → 验证",
+      "points": 5,
+      "tags": [
+        "level:example",
+        "axis:communication_quality"
+      ]
+    },
+    {
+      "criterion": "将三个 DNS 故障错误归因为单一根因",
+      "points": -10,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "误判为网络问题或配置问题，而实际是 DNS 解析被注入故障",
+      "points": -7,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "未检查 DNSChaos 实验就下结论",
+      "points": -8,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "仅查看单一云的资源就给出全局诊断，遗漏了跨云 DNS 故障",
+      "points": -6,
+      "tags": [
+        "level:example",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "忽略已自愈的 recommendationservice DNS 故障及其缓存残留可能性",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "将 DNSChaos 定位到错误云集群，导致修复命令作用在错误 context",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "误判 DNS 问题为应用层 bug（如认为 paymentservice 代码有异常），未检查 DNS 解析",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "识别出 DNS 故障的典型模式：pod Running 但服务间调用失败，直接定位到 DNS 层而非网络或应用层",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:dns_pattern_recognition",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "模型在面对多个同时存在的 DNS 故障时，能够正确识别每个故障的独立性，不将无关故障混为一谈",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:multi_fault_handling",
+        "axis:accuracy"
+      ]
+    },
+    {
+      "criterion": "模型的排查过程覆盖了所有受影响的云（阿里云、腾讯云、AWS），使用了多个 --context 查看不同云的资源",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:cross_cloud_diagnosis",
+        "axis:completeness"
+      ]
+    },
+    {
+      "criterion": "模型能够识别已自愈的 DNS 故障（recommendationservice），不被'当前 DNS 正常'的表象误导",
+      "points": 5,
+      "tags": [
+        "level:cluster",
+        "cluster:misleading_signal_awareness",
+        "axis:context_awareness"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1（≤ 14 次）",
+      "points": 4,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 ≤ ideal_call_count × 1.25（≤ 17 次）",
+      "points": 2,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    },
+    {
+      "criterion": "排查效率：总工具调用次数 > ideal_call_count × 1.5（> 21 次）",
+      "points": -5,
+      "tags": [
+        "level:example",
+        "axis:efficiency"
+      ]
+    }
+  ],
+  "ideal_call_count": 14
+}

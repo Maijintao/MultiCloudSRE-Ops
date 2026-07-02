@@ -95,7 +95,8 @@ def build_docker_command(home, workspace, runner_file, prompt_file, env_file, ru
     cmd.extend(["--mount", docker_mount(workspace, "/workspace")])
     cmd.extend(["--mount", docker_mount(runner_file, "/runner/run_hermes_query.py", readonly=True)])
     cmd.extend(["--mount", docker_mount(prompt_file, "/runner/prompt.txt", readonly=True)])
-    if Path(settings.HERMES_LIB).exists():
+    hermes_lib = Path(settings.HERMES_LIB)
+    if hermes_lib.exists() and (hermes_lib / "cli.py").exists():
         cmd.extend(["--mount", docker_mount(settings.HERMES_LIB, settings.HERMES_CONTAINER_LIB, readonly=True)])
     for source, target in hermes_python_mounts():
         cmd.extend(["--mount", docker_mount(source, target, readonly=True)])

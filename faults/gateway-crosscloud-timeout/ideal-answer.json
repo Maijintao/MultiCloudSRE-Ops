@@ -1,0 +1,111 @@
+{
+  "fault_info": {
+    "root_cause": "腾讯云 new-gatewayservice 到 AWS new-orderservice 外部入口（3.26.241.84:30070）的跨云调用被注入 400±150ms 延迟和 12% 丢包，同时 gateway 的 UPSTREAM_TIMEOUT 被收紧到 500ms 且 MAX_RETRIES=0。延迟+抖动可能达到 550ms，超过 500ms 超时阈值，导致偶发连接超时。StressChaos（全命名空间 CPU 压力）是干扰项，不是主因。",
+    "faulty_clouds": [
+      "unknown"
+    ],
+    "affected_clouds": [
+      "tencent",
+      "aws",
+      "aliyun"
+    ],
+    "fault_location": {
+      "module": "gateway + network",
+      "file_path": null,
+      "function_or_config": "NetworkChaos: gw-to-aws-order-delay (externalTargets=3.26.241.84, 400ms±150ms) + gw-to-aws-order-loss (externalTargets=3.26.241.84, 12%), env: UPSTREAM_TIMEOUT=500ms, MAX_RETRIES=0",
+      "description": "腾讯云 gateway 到 AWS orderservice 的跨云调用延迟+丢包叠加上超时配置收紧，导致偶发 502/504。StressChaos 是干扰项。"
+    }
+  },
+  "reasoning_process": {
+    "observed_symptoms": [
+      "RUM 中接口错误率和耗时出现尖刺，但不是所有页面都失败。",
+      "腾讯云 gateway 相关接口更容易出现 502/504。",
+      "Pod 基本 Running，Deployment 可用副本正常。",
+      "seat-1 中有多个 Chaos 对象，需要判断主因和干扰。"
+    ],
+    "key_evidence": [
+      {
+        "source": "RUM 控制台",
+        "content": "入口/API 维度出现 5xx 和耗时尖刺，用户侧影响集中在网关转发链路。",
+        "conclusion": "先确认真实用户受影响范围。"
+      },
+      {
+        "source": "kubectl --context=tencent -n seat-1 logs deploy/new-gatewayservice",
+        "content": "日志中出现 upstream timed out、connection timeout 等跨云调用错误。",
+        "conclusion": "网关访问下游时超时，而不是前端静态资源问题。"
+      },
+      {
+        "source": "kubectl --context=tencent -n seat-1 get networkchaos",
+        "content": "gw-to-aws-order-delay / gw-to-aws-order-loss 作用于 new-gatewayservice 到外部目标 3.26.241.84（AWS new-orderservice NodePort）的流量：400ms±150ms + 丢包 12%",
+        "conclusion": "gateway 到 AWS orderservice 有显著延迟和丢包。"
+      },
+      {
+        "source": "kubectl --context=tencent -n seat-1 get deploy new-gatewayservice -o yaml",
+        "content": "UPSTREAM_TIMEOUT=500ms, MAX_RETRIES=0",
+        "conclusion": "超时配置比延迟+抖动的上限（550ms）短，且不重试。"
+      },
+      {
+        "source": "kubectl --context=tencent -n seat-1 get stresschaos",
+        "content": "tencent-global-cpu-stress (mode: all, load: 50)",
+        "conclusion": "这是干扰项，CPU 压力不是主因。"
+      }
+    ],
+    "causal_chain": [
+      "NetworkChaos 注入 gateway -> AWS orderservice 外部入口（externalTargets=3.26.241.84）延迟 400±150ms + 丢包 12%。",
+      "env 配置 UPSTREAM_TIMEOUT=500ms，但延迟+抖动可能达到 550ms。",
+      "env 配置 MAX_RETRIES=0，失败不重试。",
+      "并发请求时，部分请求超过 500ms 超时阈值。",
+      "用户侧表现为 gateway 502/504。",
+      "StressChaos 是干扰项，容易被误判为主因。"
+    ]
+  },
+  "verification_method": {
+    "verification_commands": [
+      {
+        "cmd": "placeholder",
+        "purpose": "placeholder",
+        "expected_result": "placeholder"
+      }
+    ],
+    "success_criteria": [
+      "placeholder"
+    ]
+  },
+  "proposed_resolution": {
+    "suggestion": "删除 NetworkChaos 对象，恢复 gateway env 配置。长期建议包括合理设置超时阈值（应大于延迟+抖动上限）、启用重试机制、监控跨云调用延迟和丢包率。",
+    "fix_steps": [
+      "kubectl --context=tencent -n seat-1 delete networkchaos gw-to-aws-order-delay gw-to-aws-order-loss",
+      "kubectl --context=tencent -n seat-1 set env deploy/new-gatewayservice UPSTREAM_TIMEOUT- MAX_RETRIES-",
+      "观察 RUM 中 gateway 5xx 和耗时回落。"
+    ]
+  },
+  "confidence": 0.92,
+  "special_points": [
+    {
+      "point": "必须识别 StressChaos 是干扰项而非主因",
+      "score": 5
+    },
+    {
+      "point": "需要对比延迟值（400±150ms）和超时值（500ms）才能定位主因",
+      "score": 5
+    },
+    {
+      "point": "MAX_RETRIES=0 禁用重试是放大器",
+      "score": 4
+    },
+    {
+      "point": "跨云调用的延迟+丢包叠加效应",
+      "score": 4
+    }
+  ],
+  "tool_process": {
+    "ideal_call_count": 10,
+    "valuable_actions": [
+      "RUM 查看入口/API 5xx 分布",
+      "查看 new-gatewayservice 日志",
+      "kubectl get networkchaos",
+      "kubectl get deploy 查看 env 配置",
+      "对比延迟值和超时值"
+    ]
+  }
+}

@@ -15,6 +15,9 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
+  - apiGroups: ["chaos-mesh.org"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -4,5 +4,5 @@
   "inject_script": "./faults/clock-skew-payment-signature/inject.sh",
   "recover_script": "./faults/clock-skew-payment-signature/recover.sh",
   "fault_phenomenon": "用户反馈下单时偶尔提示\"验证失败\"或\"请重试\"，不是每次都坏。浏览商品、加购物车都正常，就是最后提交订单那一步会撞上。重启服务也没用。",
-  "public_case_info": "该题基于部署在三朵云（阿里云、腾讯云、AWS）上的电商微服务系统。可访问入口：阿里云前端 http://8.163.35.175:31366/、腾讯云网关 http://8.163.35.175:30076/、AWS 订单服务 http://3.26.241.84:30070/。可使用 MCP K8s 工具（只读）查看三云集群状态，排查服务配置和时间同步问题。"
+  "public_case_info": "该题基于部署在三朵云（阿里云、腾讯云、AWS）上的电商微服务系统。可访问入口：阿里云前端 http://203.0.113.10:31366/、腾讯云网关 http://203.0.113.10:30076/、AWS 订单服务 http://203.0.113.30:30070/。可使用 MCP K8s 工具（只读）查看三云集群状态，排查服务配置和时间同步问题。"
 }

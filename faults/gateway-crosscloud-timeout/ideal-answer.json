@@ -1,6 +1,6 @@
 {
   "fault_info": {
-    "root_cause": "腾讯云 new-gatewayservice 到 AWS new-orderservice 外部入口（3.26.241.84:30070）的跨云调用被注入 400±150ms 延迟和 12% 丢包，同时 gateway 的 UPSTREAM_TIMEOUT 被收紧到 500ms 且 MAX_RETRIES=0。延迟+抖动可能达到 550ms，超过 500ms 超时阈值，导致偶发连接超时。StressChaos（全命名空间 CPU 压力）是干扰项，不是主因。",
+    "root_cause": "腾讯云 new-gatewayservice 到 AWS new-orderservice 外部入口（203.0.113.30:30070）的跨云调用被注入 400±150ms 延迟和 12% 丢包，同时 gateway 的 UPSTREAM_TIMEOUT 被收紧到 500ms 且 MAX_RETRIES=0。延迟+抖动可能达到 550ms，超过 500ms 超时阈值，导致偶发连接超时。StressChaos（全命名空间 CPU 压力）是干扰项，不是主因。",
     "faulty_clouds": [
       "unknown"
     ],
@@ -12,7 +12,7 @@
     "fault_location": {
       "module": "gateway + network",
       "file_path": null,
-      "function_or_config": "NetworkChaos: gw-to-aws-order-delay (externalTargets=3.26.241.84, 400ms±150ms) + gw-to-aws-order-loss (externalTargets=3.26.241.84, 12%), env: UPSTREAM_TIMEOUT=500ms, MAX_RETRIES=0",
+      "function_or_config": "NetworkChaos: gw-to-aws-order-delay (externalTargets=203.0.113.30, 400ms±150ms) + gw-to-aws-order-loss (externalTargets=203.0.113.30, 12%), env: UPSTREAM_TIMEOUT=500ms, MAX_RETRIES=0",
       "description": "腾讯云 gateway 到 AWS orderservice 的跨云调用延迟+丢包叠加上超时配置收紧，导致偶发 502/504。StressChaos 是干扰项。"
     }
   },
@@ -36,7 +36,7 @@
       },
       {
         "source": "kubectl --context=tencent -n seat-1 get networkchaos",
-        "content": "gw-to-aws-order-delay / gw-to-aws-order-loss 作用于 new-gatewayservice 到外部目标 3.26.241.84（AWS new-orderservice NodePort）的流量：400ms±150ms + 丢包 12%",
+        "content": "gw-to-aws-order-delay / gw-to-aws-order-loss 作用于 new-gatewayservice 到外部目标 203.0.113.30（AWS new-orderservice NodePort）的流量：400ms±150ms + 丢包 12%",
         "conclusion": "gateway 到 AWS orderservice 有显著延迟和丢包。"
       },
       {
@@ -51,7 +51,7 @@
       }
     ],
     "causal_chain": [
-      "NetworkChaos 注入 gateway -> AWS orderservice 外部入口（externalTargets=3.26.241.84）延迟 400±150ms + 丢包 12%。",
+      "NetworkChaos 注入 gateway -> AWS orderservice 外部入口（externalTargets=203.0.113.30）延迟 400±150ms + 丢包 12%。",
       "env 配置 UPSTREAM_TIMEOUT=500ms，但延迟+抖动可能达到 550ms。",
       "env 配置 MAX_RETRIES=0，失败不重试。",
       "并发请求时，部分请求超过 500ms 超时阈值。",

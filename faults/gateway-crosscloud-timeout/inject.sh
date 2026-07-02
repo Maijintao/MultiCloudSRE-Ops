@@ -4,7 +4,7 @@ export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-injector.yaml}"
 kc() { local ctx=$1; shift; kubectl --context="$ctx" -n seat-1 "$@"; }
 kc_apply() { local ctx=$1; shift; kc "$ctx" apply -f - "$@"; }
 
-AWS_ORDER_HOST="${AWS_ORDER_HOST:-${SERVER3_IP:-3.26.241.84}}"
+AWS_ORDER_HOST="${AWS_ORDER_HOST:-${SERVER3_IP:-203.0.113.30}}"
 
 echo "[inject] challenge-31: 腾讯云 gateway 跨云调用级联超时（三层叠加 + 干扰）"
 echo "[inject] external target: ${AWS_ORDER_HOST} (AWS new-orderservice NodePort host)"

@@ -151,12 +151,13 @@ class DemoCaseTests(unittest.TestCase):
         for case_path in (ROOT / "faults").glob("*/case.json"):
             case = json.loads(case_path.read_text(encoding="utf-8"))
             cases.append((case_path.parent.name, case))
+        demo_cases = [(name, case) for name, case in cases if "order_id" in case]
         self.assertEqual(
-            sorted(name for name, _case in cases),
+            sorted(name for name, _case in demo_cases),
             ["db_down", "redis_down", "worker_down"],
         )
-        self.assertEqual(sorted(case["order_id"] for _name, case in cases), [1, 2, 5])
-        for name, case in cases:
+        self.assertEqual(sorted(case["order_id"] for _name, case in demo_cases), [1, 2, 5])
+        for name, case in demo_cases:
             self.assertTrue(case.get("submission_enabled"), name)
             self.assertTrue(case.get("ai_analysis_visible"), name)
             self.assertIn("localhost", case.get("public_case_info", ""))

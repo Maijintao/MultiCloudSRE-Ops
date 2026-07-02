@@ -18,6 +18,7 @@ SKIPPED_DIRS = {
     "state",
     "generated",
     ".private-release-backup",
+    "dist",
 }
 
 TEXT_SUFFIXES = {

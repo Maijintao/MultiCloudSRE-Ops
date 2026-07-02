@@ -72,7 +72,10 @@ def k3s_mcp_config():
                     "/home/hermes/.kube/config-readonly.yaml",
                 ),
                 "OJ_K3S_KUBECTL": os.environ.get("OJ_K3S_CONTAINER_KUBECTL_PATH", "/usr/local/bin/kubectl"),
-                "OJ_K3S_ALLOWED_CONTEXTS": os.environ.get("OJ_K3S_ALLOWED_CONTEXTS", "alicloud,tencent,aws"),
+                "OJ_K3S_ALLOWED_CONTEXTS": os.environ.get(
+                    "OJ_K3S_ALLOWED_CONTEXTS",
+                    "server1,server2,server3,alicloud,tencent,aws",
+                ),
                 "OJ_K3S_NAMESPACE": os.environ.get("OJ_K3S_NAMESPACE", "seat-1"),
             },
         }

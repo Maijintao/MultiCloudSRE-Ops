@@ -1,9 +1,13 @@
 #!/bin/bash
-# 09 - 端到端健康检查（跨云链路验证）
+# 09 - 端到端健康检查（角色链路验证）
 
 log "执行端到端健康检查..."
 
 fail_count=0
+PAYMENT_SERVICE_NODEPORT="${PAYMENT_SERVICE_NODEPORT:-30051}"
+if [[ "$SERVER1_IP" == "$SERVER3_IP" && "$PAYMENT_SERVICE_NODEPORT" == "30051" ]]; then
+  PAYMENT_SERVICE_NODEPORT="30075"
+fi
 
 check_tcp() {
   local from_ip="$1" from_user="$2" from_pass_var="$3" from_key_var="$4"
@@ -54,59 +58,61 @@ check_token_file() {
 }
 
 log "── Pod 状态 ──"
-for cloud in aliyun tencent aws; do
-  log "  $cloud:"
-  kubectl_for "$cloud" "get pods -n seat-1 --no-headers 2>/dev/null | head -20" || true
+for role in server1 server2 server3; do
+  log "  $(role_label "$role"):"
+  kubectl_for "$role" "get pods -n seat-1 --no-headers 2>/dev/null | head -20" || true
 done
 
 log ""
 log "── 跨云链路验证 ──"
 
-# 阿里云 → 腾讯云
-check_tcp "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" \
-  "$TENCENT_IP" "30008" "阿里云→腾讯 productcatalog"
-check_tcp "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" \
-  "$TENCENT_IP" "30007" "阿里云→腾讯 cart"
-check_tcp "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" \
-  "$TENCENT_IP" "30009" "阿里云→腾讯 currency"
+# 服务器1 → 服务器2
+check_tcp "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" \
+  "$SERVER2_IP" "30008" "服务器1→服务器2 productcatalog"
+check_tcp "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" \
+  "$SERVER2_IP" "30007" "服务器1→服务器2 cart"
+check_tcp "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" \
+  "$SERVER2_IP" "30009" "服务器1→服务器2 currency"
 
-# 阿里云 → AWS
-check_tcp "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" \
-  "$AWS_IP" "30051" "阿里云→AWS payment"
-check_tcp "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" \
-  "$AWS_IP" "30070" "阿里云→AWS orders"
+# 服务器1 → 服务器3
+check_tcp "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" \
+  "$SERVER3_IP" "$PAYMENT_SERVICE_NODEPORT" "服务器1→服务器3 payment"
+check_tcp "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" \
+  "$SERVER3_IP" "30070" "服务器1→服务器3 orders"
 
-# 腾讯云 → AWS
-check_tcp "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" \
-  "$AWS_IP" "30070" "腾讯云→AWS orders"
+# 服务器2 → 服务器3
+check_tcp "$SERVER2_IP" "$SERVER2_USER" "SERVER2_PASS" "SERVER2_KEY" \
+  "$SERVER3_IP" "30070" "服务器2→服务器3 orders"
 
-# AWS → 腾讯云
-check_tcp "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" \
-  "$TENCENT_IP" "30008" "AWS→腾讯 productcatalog"
+# 服务器3 → 服务器2
+check_tcp "$SERVER3_IP" "$SERVER3_USER" "SERVER3_PASS" "SERVER3_KEY" \
+  "$SERVER2_IP" "30008" "服务器3→服务器2 productcatalog"
 
-# AWS → 阿里云
-check_tcp "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" \
-  "$ALIYUN_IP" "30051" "AWS→阿里 shipping"
+# 服务器3 → 服务器1
+check_tcp "$SERVER3_IP" "$SERVER3_USER" "SERVER3_PASS" "SERVER3_KEY" \
+  "$SERVER1_IP" "30051" "服务器3→服务器1 shipping"
 
 # 前端可访问性
 log ""
 log "── 前端访问 ──"
-local_code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 35 "http://${ALIYUN_IP}:31366" 2>/dev/null || echo "000")
+local_code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 35 "http://${SERVER1_IP}:31366" 2>/dev/null || echo "000")
 if [[ "$local_code" == "200" ]]; then
-  log "  [OK] 前端 http://${ALIYUN_IP}:31366 → HTTP $local_code"
+  log "  [OK] 前端 http://${SERVER1_IP}:31366 → HTTP $local_code"
 else
-  err "  [FAIL] 前端 http://${ALIYUN_IP}:31366 → HTTP $local_code"
+  err "  [FAIL] 前端 http://${SERVER1_IP}:31366 → HTTP $local_code"
   fail_count=$((fail_count + 1))
 fi
 
 log ""
 log "── 本地访问凭据验证 ──"
 GEN_DIR="$SCRIPT_DIR/kubeconfigs/generated"
-for cloud in aliyun tencent aws; do
-  check_local_kubeconfig "$GEN_DIR/${cloud}-readonly.kubeconfig" "list" "pods" "seat-1" "$cloud readonly kubeconfig"
-  check_local_kubeconfig "$GEN_DIR/${cloud}-injector.kubeconfig" "create" "podchaos.chaos-mesh.org" "seat-1" "$cloud injector kubeconfig"
-  check_token_file "$GEN_DIR/${cloud}-chaos-dashboard.token" "$cloud Chaos Dashboard"
+for role in server1 server2 server3; do
+  check_local_kubeconfig "$GEN_DIR/${role}-readonly.kubeconfig" "list" "pods" "seat-1" "$role readonly kubeconfig"
+  check_local_kubeconfig "$GEN_DIR/${role}-injector.kubeconfig" "create" "podchaos.chaos-mesh.org" "seat-1" "$role injector kubeconfig"
+  check_token_file "$GEN_DIR/${role}-chaos-dashboard.token" "$role Chaos Dashboard"
 done
+check_local_kubeconfig "$GEN_DIR/config-readonly.yaml" "list" "pods" "seat-1" "OJ config-readonly.yaml"
+check_local_kubeconfig "$GEN_DIR/config-injector.yaml" "create" "podchaos.chaos-mesh.org" "seat-1" "OJ config-injector.yaml"
 
 echo ""
 if [[ $fail_count -eq 0 ]]; then

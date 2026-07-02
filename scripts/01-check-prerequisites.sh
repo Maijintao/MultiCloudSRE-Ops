@@ -3,7 +3,7 @@
 
 log "检查本机依赖..."
 
-local_deps=(sshpass ssh scp kubectl)
+local_deps=(sshpass ssh scp kubectl curl tar)
 local_missing=0
 
 for dep in "${local_deps[@]}"; do

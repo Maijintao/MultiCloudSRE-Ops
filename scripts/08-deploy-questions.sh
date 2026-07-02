@@ -8,7 +8,7 @@ if [[ ! -d "$QUESTIONS_DIR" ]] || [[ -z "$(ls -A "$QUESTIONS_DIR" 2>/dev/null)" 
   return 0 2>/dev/null || exit 0
 fi
 
-log "上传出题脚本到三台服务器..."
+log "上传出题脚本到服务器角色..."
 
 upload_questions_to() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5"
@@ -33,8 +33,13 @@ upload_questions_to() {
   log "  $label 题目上传完成"
 }
 
-upload_questions_to "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "阿里云"
-upload_questions_to "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "腾讯云"
-upload_questions_to "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "AWS"
+for role in server1 server2 server3; do
+  upload_questions_to \
+    "$(role_ip "$role")" \
+    "$(role_user "$role")" \
+    "$(role_pass_var "$role")" \
+    "$(role_key_var "$role")" \
+    "$(role_label "$role")"
+done
 
 log "题目部署完成"

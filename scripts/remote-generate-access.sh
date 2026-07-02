@@ -18,7 +18,7 @@ for manifest in \
   /tmp/sre-injector.yaml \
   /tmp/sre-chaos-dashboard.yaml
 do
-  [[ -f "$manifest" ]] && $KUBECTL apply -f "$manifest" >/dev/null
+  if [[ -f "$manifest" ]]; then $KUBECTL apply -f "$manifest" >/dev/null; fi
 done
 
 get_token() {

@@ -9,7 +9,7 @@ dashboard:
   create: true
   service:
     type: NodePort
-    nodePort: 2333
+    nodePort: 32333
 
 controllerManager:
   replicaCount: 1

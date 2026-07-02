@@ -5,6 +5,12 @@ log "渲染 K8s manifest 模板..."
 
 RENDERED_DIR="$SCRIPT_DIR/rendered"
 MANIFESTS_DIR="$SCRIPT_DIR/manifests"
+PAYMENT_SERVICE_NODEPORT="${PAYMENT_SERVICE_NODEPORT:-30051}"
+
+if [[ "$SERVER1_IP" == "$SERVER3_IP" && "$PAYMENT_SERVICE_NODEPORT" == "30051" ]]; then
+  PAYMENT_SERVICE_NODEPORT="30075"
+  warn "服务器1和服务器3相同，paymentservice NodePort 自动改为 $PAYMENT_SERVICE_NODEPORT，避免与 shipping 冲突"
+fi
 
 mkdir -p "$RENDERED_DIR/aliyun" "$RENDERED_DIR/tencent" "$RENDERED_DIR/aws"
 
@@ -27,10 +33,15 @@ render_cloud() {
     [[ -f "$f" ]] || continue
     local basename="$(basename "$f")"
     sed \
+      -e "s/__AWS_IP__:30051/${SERVER3_IP}:${PAYMENT_SERVICE_NODEPORT}/g" \
       -e "s/__ALIYUN_IP__/${ALIYUN_IP}/g" \
       -e "s/__TENCENT_IP__/${TENCENT_IP}/g" \
       -e "s/__AWS_IP__/${AWS_IP}/g" \
       "$f" > "$dst_dir/$basename"
+    if [[ "$cloud" == "aws" && "$basename" == "paymentservice-svc.yaml" ]]; then
+      sed -i '' -e "s/nodePort: 30051/nodePort: ${PAYMENT_SERVICE_NODEPORT}/g" "$dst_dir/$basename" 2>/dev/null \
+        || sed -i -e "s/nodePort: 30051/nodePort: ${PAYMENT_SERVICE_NODEPORT}/g" "$dst_dir/$basename"
+    fi
     log "  渲染: $cloud/$basename"
   done
 }

@@ -1,12 +1,12 @@
 #!/bin/bash
-# 04 - 安装 Chaos Mesh（三台并发）
+# 04 - 安装 Chaos Mesh（按唯一服务器并发）
 
 if [[ "${SKIP_CHAOS_MESH:-false}" == "true" ]]; then
   log "SKIP_CHAOS_MESH=true, 跳过 Chaos Mesh 安装"
   return 0 2>/dev/null || exit 0
 fi
 
-log "在三台服务器上安装 Chaos Mesh..."
+log "在服务器上安装 Chaos Mesh..."
 
 install_chaos_mesh() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5"
@@ -48,19 +48,24 @@ install_chaos_mesh() {
   "
 }
 
-# 三台并发
-install_chaos_mesh "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "阿里云" &
-pid1=$!
-install_chaos_mesh "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "腾讯云" &
-pid2=$!
-install_chaos_mesh "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "AWS" &
-pid3=$!
-
 fail=0
-wait $pid1 || { err "阿里云 Chaos Mesh 安装失败"; fail=1; }
-wait $pid2 || { err "腾讯云 Chaos Mesh 安装失败"; fail=1; }
-wait $pid3 || { err "AWS Chaos Mesh 安装失败"; fail=1; }
+pids=()
+labels=()
+for role in $(unique_role_hosts); do
+  install_chaos_mesh \
+    "$(role_ip "$role")" \
+    "$(role_user "$role")" \
+    "$(role_pass_var "$role")" \
+    "$(role_key_var "$role")" \
+    "$(role_label "$role")" &
+  pids+=("$!")
+  labels+=("$(role_label "$role")")
+done
+
+for i in "${!pids[@]}"; do
+  wait "${pids[$i]}" || { err "${labels[$i]} Chaos Mesh 安装失败"; fail=1; }
+done
 
 [[ $fail -eq 1 ]] && exit 1
 
-log "Chaos Mesh 安装完成（三台）"
+log "Chaos Mesh 安装完成"

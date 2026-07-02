@@ -1,5 +1,5 @@
 #!/bin/bash
-# 08 - 生成三云访问凭据（readonly/injector kubeconfig + Chaos Dashboard token）
+# 08 - 生成服务器角色访问凭据（readonly/injector kubeconfig + Chaos Dashboard token）
 
 if [[ "${SKIP_ACCESS_GENERATION:-false}" == "true" ]]; then
   log "SKIP_ACCESS_GENERATION=true, 跳过访问凭据生成"
@@ -42,6 +42,48 @@ EOF
   chmod 600 "$dst"
 }
 
+add_context_alias() {
+  local kubeconfig="$1"
+  local source_context="$2"
+  local alias_context="$3"
+
+  local cluster user namespace
+  cluster="$(kubectl --kubeconfig "$kubeconfig" config view -o "jsonpath={.contexts[?(@.name==\"$source_context\")].context.cluster}")"
+  user="$(kubectl --kubeconfig "$kubeconfig" config view -o "jsonpath={.contexts[?(@.name==\"$source_context\")].context.user}")"
+  namespace="$(kubectl --kubeconfig "$kubeconfig" config view -o "jsonpath={.contexts[?(@.name==\"$source_context\")].context.namespace}")"
+  [[ -n "$cluster" && -n "$user" ]] || return 1
+  kubectl --kubeconfig "$kubeconfig" config set-context "$alias_context" \
+    --cluster="$cluster" \
+    --user="$user" \
+    --namespace="${namespace:-seat-1}" >/dev/null
+}
+
+build_combined_kubeconfig() {
+  local kind="$1"
+  local output="$2"
+  local files=()
+  local role source_context
+
+  for role in server1 server2 server3; do
+    files+=("$GENERATED_DIR/${role}-${kind}.kubeconfig")
+  done
+
+  KUBECONFIG="$(IFS=:; echo "${files[*]}")" kubectl config view --flatten > "$output"
+
+  for role in server1 server2 server3; do
+    source_context="sre-${role}-${kind}"
+    add_context_alias "$output" "$source_context" "$role"
+  done
+
+  # 兼容已有 OJ demo/fault 脚本和 MCP 默认 context 名。
+  add_context_alias "$output" "sre-server1-${kind}" "alicloud"
+  add_context_alias "$output" "sre-server2-${kind}" "tencent"
+  add_context_alias "$output" "sre-server3-${kind}" "aws"
+
+  kubectl --kubeconfig "$output" config use-context server1 >/dev/null
+  chmod 600 "$output"
+}
+
 generate_for() {
   local cloud="$1" ip="$2" user="$3" pass_var="$4" key_var="$5" label="$6"
   local remote_script="/tmp/sre-remote-generate-access.sh"
@@ -78,16 +120,27 @@ generate_for() {
   log "  $label 访问凭据已生成"
 }
 
-log "生成三云 kubeconfig 和 Chaos Dashboard token..."
+log "生成服务器角色 kubeconfig 和 Chaos Dashboard token..."
 
-generate_for "aliyun" "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "阿里云"
-generate_for "tencent" "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "腾讯云"
-generate_for "aws" "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "AWS"
+for role in server1 server2 server3; do
+  generate_for \
+    "$role" \
+    "$(role_ip "$role")" \
+    "$(role_user "$role")" \
+    "$(role_pass_var "$role")" \
+    "$(role_key_var "$role")" \
+    "$(role_label "$role")"
+done
+
+build_combined_kubeconfig "readonly" "$GENERATED_DIR/config-readonly.yaml"
+build_combined_kubeconfig "injector" "$GENERATED_DIR/config-injector.yaml"
 
 if [[ "${UPDATE_LOCAL_KUBECONFIG:-true}" == "true" ]]; then
-  log "本机 kubeconfig 已合并上下文：sre-aliyun-*, sre-tencent-*, sre-aws-*"
+  log "本机 kubeconfig 已合并上下文：sre-server1-*, sre-server2-*, sre-server3-*"
 else
   log "已跳过合并本机 kubeconfig，可直接使用 kubeconfigs/generated/*.kubeconfig"
 fi
 
 log "访问凭据生成完成 → kubeconfigs/generated/"
+log "  OJ readonly: $GENERATED_DIR/config-readonly.yaml"
+log "  OJ injector: $GENERATED_DIR/config-injector.yaml"

@@ -1,7 +1,7 @@
 #!/bin/bash
-# 07 - kubectl apply 到三台服务器
+# 07 - kubectl apply 到服务器角色
 
-log "部署 K8s 资源到三台服务器..."
+log "部署 K8s 资源到服务器角色..."
 
 deploy_to() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5" cloud="$6"
@@ -22,7 +22,9 @@ deploy_to() {
 
   # apply
   local sudo_prefix=""
-  [[ "$user" != "root" ]] && sudo_prefix="sudo -n "
+  if [[ "$user" != "root" ]]; then
+    sudo_prefix="sudo -n "
+  fi
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
     # 先创建 namespace
@@ -44,14 +46,20 @@ deploy_to() {
   log "  $label 资源部署完成"
 }
 
-deploy_to "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "阿里云" "aliyun"
-deploy_to "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "腾讯云" "tencent"
-deploy_to "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "AWS" "aws"
+for role in server1 server2 server3; do
+  deploy_to \
+    "$(role_ip "$role")" \
+    "$(role_user "$role")" \
+    "$(role_pass_var "$role")" \
+    "$(role_key_var "$role")" \
+    "$(role_label "$role")" \
+    "$(role_cloud_dir "$role")"
+done
 
 # 等待所有 Pod 就绪
 log "等待所有 Pod 就绪..."
-wait_for_pods "aliyun" "seat-1" 300
-wait_for_pods "tencent" "seat-1" 300
-wait_for_pods "aws" "seat-1" 300
+wait_for_pods "server1" "seat-1" 300
+wait_for_pods "server2" "seat-1" 300
+wait_for_pods "server3" "seat-1" 300
 
 log "服务部署完成"

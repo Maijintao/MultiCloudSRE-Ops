@@ -17,7 +17,7 @@ SERVER = FastMCP(
 KUBECTL = os.environ.get("OJ_K3S_KUBECTL", "/usr/local/bin/kubectl")
 ALLOWED_CONTEXTS = {
     item.strip()
-    for item in os.environ.get("OJ_K3S_ALLOWED_CONTEXTS", "alicloud,tencent,aws").split(",")
+    for item in os.environ.get("OJ_K3S_ALLOWED_CONTEXTS", "server1,server2,server3,alicloud,tencent,aws").split(",")
     if item.strip()
 }
 ALLOWED_NAMESPACE = os.environ.get("OJ_K3S_NAMESPACE", "seat-1").strip() or "seat-1"
@@ -67,7 +67,7 @@ def _contexts_text() -> str:
 
 def context_hint(context: Optional[str]) -> str:
     value = str(context or "").strip() or "（空）"
-    return f'当前只开放以下 context: {_contexts_text()}。你传入的 "{value}" 不可用，请改用 context="alicloud"、"tencent" 或 "aws"。'
+    return f'当前只开放以下 context: {_contexts_text()}。你传入的 "{value}" 不可用，请改用 context="server1"、"server2" 或 "server3"。'
 
 
 def namespace_hint(namespace: Optional[str]) -> str:

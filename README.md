@@ -2,12 +2,12 @@
 
 本仓库现在包含两部分：
 
-- **三云靶场一键部署**：在阿里云、腾讯云、AWS 三台服务器上部署 k3s、Chaos Mesh、跨云电商 demo、访问凭据。
+- **靶场一键部署**：在服务器1、服务器2、服务器3 上部署 k3s、Chaos Mesh、跨角色电商 demo、访问凭据。三个服务器槽位可以是不同机器，也可以部分或全部填同一个 IP。
 - **AIOps OJ Platform**：轻量级 Python/SQLite OJ 平台，用于提交 Prompt/Skill、运行 Hermes 诊断、调用 OpenAI-compatible 评分接口打分。
 
 真实比赛题、云主机地址、SSH 密码、kubeconfig、API key、隐藏答案、运行数据库和实验状态不要提交进仓库。
 
-## 三云靶场快速开始
+## 靶场快速开始
 
 ```bash
 chmod +x deploy.sh
@@ -22,26 +22,28 @@ vim config.env
 ./deploy.sh
 ```
 
-### 三云角色
+### 服务器角色
 
-| 云 | 角色 | 部署的服务 | NodePort |
+| 槽位 | 角色 | 部署的服务 | NodePort |
 |---|---|---|---|
-| 阿里云 | 流量入口 | frontend, checkout, recommendation, ad, shipping, mysql, orderstore, redis-cart | 31366, 31380, 32366, 30051 |
-| 腾讯云 | 数据层 | cart, currency, email, gateway, productcatalog, redis-cart | 30007-30010, 30076 |
-| AWS | 履约链 | orderservice, payment, inventory, riskcontrol, notification, userbehavior | 30051, 30070-30074 |
+| 服务器1 | 流量入口 | frontend, checkout, recommendation, ad, shipping, mysql, orderstore, redis-cart | 31366, 31380, 32366, 30051 |
+| 服务器2 | 数据层 | cart, currency, email, gateway, productcatalog, redis-cart | 30007-30010, 30076 |
+| 服务器3 | 履约链 | orderservice, payment, inventory, riskcontrol, notification, userbehavior | 30051, 30070-30074 |
+
+如果多个槽位填写同一个 IP，脚本会对这台机器只安装一次 k3s、只安装一次 Chaos Mesh、只导入一次所需镜像集合。服务器1和服务器3 共用同一 IP 时，`paymentservice` 的 NodePort 会默认从 `30051` 自动改为 `30075`，避免和 `shipping` 冲突。
 
 ### 访问凭据
 
 部署完成后会自动生成：
 
-- `kubeconfigs/generated/aliyun-readonly.kubeconfig`
-- `kubeconfigs/generated/aliyun-injector.kubeconfig`
-- `kubeconfigs/generated/aliyun-chaos-dashboard.token`
-- 腾讯云、AWS 同名文件
+- `kubeconfigs/generated/server1-readonly.kubeconfig`
+- `kubeconfigs/generated/server1-injector.kubeconfig`
+- `kubeconfigs/generated/server1-chaos-dashboard.token`
+- 服务器2、服务器3 同名文件
 
-默认会把三云 readonly/injector context 合并进本机 `~/.kube/config`，可通过 `UPDATE_LOCAL_KUBECONFIG=false` 关闭。题目 inject/recover 脚本默认不部署，需要时显式设置 `DEPLOY_QUESTIONS=true`。
+默认会把三个服务器角色的 readonly/injector context 合并进本机 `~/.kube/config`，可通过 `UPDATE_LOCAL_KUBECONFIG=false` 关闭。题目 inject/recover 脚本默认不部署，需要时显式设置 `DEPLOY_QUESTIONS=true`。
 
-### 三云环境要求
+### 靶场环境要求
 
 - 本机：`sshpass`、`kubectl`、`ssh`
 - 服务器：Ubuntu 22.04/24.04 amd64，至少 2G RAM、30G 磁盘
@@ -92,11 +94,11 @@ OJ_HERMES_DOCKER_IMAGE=hermes-agent:latest
 ## 目录结构
 
 ```text
-deploy.sh                 三云靶场一键部署入口
-config.env.example        三云靶场配置模板
-scripts/                  三云部署脚本 + OJ 前端检查脚本
-manifests/                三云 K8s 资源模板
-kubeconfigs/              三云 RBAC + kubeconfig 模板
+deploy.sh                 靶场一键部署入口
+config.env.example        靶场配置模板
+scripts/                  服务器角色部署脚本 + OJ 前端检查脚本
+manifests/                K8s 资源模板
+kubeconfigs/              RBAC + kubeconfig 模板
 oj_platform/              OJ 后端 Python 模块
 static/                   OJ 前端入口、样式和静态资源
 faults/                   OJ 脱敏 demo case 和故障脚本

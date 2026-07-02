@@ -26,17 +26,17 @@ ssh_exec() {
 # 三台服务器并发 SSH 执行
 ssh_all_parallel() {
   local cmd="$@"
-  ssh_exec "$ALIYUN_IP" "$ALIYUN_USER" "ALIYUN_PASS" "ALIYUN_KEY" "$cmd" &
+  ssh_exec "$SERVER1_IP" "$SERVER1_USER" "SERVER1_PASS" "SERVER1_KEY" "$cmd" &
   local pid1=$!
-  ssh_exec "$TENCENT_IP" "$TENCENT_USER" "TENCENT_PASS" "TENCENT_KEY" "$cmd" &
+  ssh_exec "$SERVER2_IP" "$SERVER2_USER" "SERVER2_PASS" "SERVER2_KEY" "$cmd" &
   local pid2=$!
-  ssh_exec "$AWS_IP" "$AWS_USER" "AWS_PASS" "AWS_KEY" "$cmd" &
+  ssh_exec "$SERVER3_IP" "$SERVER3_USER" "SERVER3_PASS" "SERVER3_KEY" "$cmd" &
   local pid3=$!
 
   local fail=0
-  wait $pid1 || { err "阿里云执行失败"; fail=1; }
-  wait $pid2 || { err "腾讯云执行失败"; fail=1; }
-  wait $pid3 || { err "AWS 执行失败"; fail=1; }
+  wait $pid1 || { err "服务器1执行失败"; fail=1; }
+  wait $pid2 || { err "服务器2执行失败"; fail=1; }
+  wait $pid3 || { err "服务器3执行失败"; fail=1; }
   return $fail
 }
 
@@ -88,17 +88,104 @@ remote_priv_prefix() {
   [[ "$user" == "root" ]] && echo "" || echo "sudo -n "
 }
 
-# kubectl 封装（根据云选择连接信息和 sudo）
+role_key() {
+  case "$1" in
+    server1|aliyun)  echo "server1" ;;
+    server2|tencent) echo "server2" ;;
+    server3|aws)     echo "server3" ;;
+    *) err "未知服务器角色: $1"; return 1 ;;
+  esac
+}
+
+role_label() {
+  case "$(role_key "$1")" in
+    server1) echo "服务器1" ;;
+    server2) echo "服务器2" ;;
+    server3) echo "服务器3" ;;
+  esac
+}
+
+role_cloud_dir() {
+  case "$(role_key "$1")" in
+    server1) echo "aliyun" ;;
+    server2) echo "tencent" ;;
+    server3) echo "aws" ;;
+  esac
+}
+
+role_ip() {
+  case "$(role_key "$1")" in
+    server1) echo "$SERVER1_IP" ;;
+    server2) echo "$SERVER2_IP" ;;
+    server3) echo "$SERVER3_IP" ;;
+  esac
+}
+
+role_user() {
+  case "$(role_key "$1")" in
+    server1) echo "$SERVER1_USER" ;;
+    server2) echo "$SERVER2_USER" ;;
+    server3) echo "$SERVER3_USER" ;;
+  esac
+}
+
+role_pass_var() {
+  case "$(role_key "$1")" in
+    server1) echo "SERVER1_PASS" ;;
+    server2) echo "SERVER2_PASS" ;;
+    server3) echo "SERVER3_PASS" ;;
+  esac
+}
+
+role_key_var() {
+  case "$(role_key "$1")" in
+    server1) echo "SERVER1_KEY" ;;
+    server2) echo "SERVER2_KEY" ;;
+    server3) echo "SERVER3_KEY" ;;
+  esac
+}
+
+host_roles_for_ip() {
+  local target_ip="$1"
+  local role
+  for role in server1 server2 server3; do
+    if [[ "$(role_ip "$role")" == "$target_ip" ]]; then
+      printf "%s " "$role"
+    fi
+  done
+  return 0
+}
+
+unique_role_hosts() {
+  local seen_ips="
+"
+  local role ip
+  for role in server1 server2 server3; do
+    ip="$(role_ip "$role")"
+    [[ -n "$ip" ]] || continue
+    case "$seen_ips" in
+      *"
+$ip
+"*) ;;
+      *)
+        seen_ips="${seen_ips}${ip}
+"
+        echo "$role"
+        ;;
+    esac
+  done
+}
+
+# kubectl 封装（根据服务器角色选择连接信息和 sudo）
 kubectl_for() {
-  local cloud="$1"; shift
+  local role="$1"; shift
   local ip user pass_var key_var
 
-  case "$cloud" in
-    aliyun)  ip="$ALIYUN_IP";  user="$ALIYUN_USER";  pass_var="ALIYUN_PASS";  key_var="ALIYUN_KEY" ;;
-    tencent) ip="$TENCENT_IP"; user="$TENCENT_USER"; pass_var="TENCENT_PASS"; key_var="TENCENT_KEY" ;;
-    aws)     ip="$AWS_IP";     user="$AWS_USER";     pass_var="AWS_PASS";     key_var="AWS_KEY" ;;
-    *) err "未知云: $cloud"; return 1 ;;
-  esac
+  role="$(role_key "$role")"
+  ip="$(role_ip "$role")"
+  user="$(role_user "$role")"
+  pass_var="$(role_pass_var "$role")"
+  key_var="$(role_key_var "$role")"
 
   local sudo_prefix
   sudo_prefix="$(remote_priv_prefix "$user")"
@@ -107,23 +194,17 @@ kubectl_for() {
 
 # 等待 Pod Ready
 wait_for_pods() {
-  local cloud="$1"
+  local role="$1"
   local ns="${2:-seat-1}"
   local timeout="${3:-300}"
 
-  log "等待 ${cloud} ${ns} 所有 Pod Ready (超时 ${timeout}s)..."
-  local elapsed=0
-  while [[ $elapsed -lt $timeout ]]; do
-    local not_ready
-    not_ready=$(kubectl_for "$cloud" "get pods -n $ns --no-headers 2>/dev/null | grep -v Running | grep -v Completed | wc -l" || echo "99")
-    if [[ "$not_ready" -eq 0 ]]; then
-      log "${cloud} ${ns} 所有 Pod 已 Ready"
-      return 0
-    fi
-    sleep 10
-    elapsed=$((elapsed + 10))
-  done
-  warn "${cloud} ${ns} 超时，仍有 Pod 未 Ready"
-  kubectl_for "$cloud" "get pods -n $ns"
+  log "等待 ${role} ${ns} 所有 Pod Ready (超时 ${timeout}s)..."
+  if kubectl_for "$role" "wait --for=condition=Ready pods --all -n $ns --timeout=${timeout}s"; then
+    log "${role} ${ns} 所有 Pod 已 Ready"
+    return 0
+  fi
+
+  warn "${role} ${ns} 超时，仍有 Pod 未 Ready"
+  kubectl_for "$role" "get pods -n $ns"
   return 1
 }

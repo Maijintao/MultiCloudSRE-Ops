@@ -10,29 +10,51 @@ fi
 log "在服务器上安装 Chaos Mesh..."
 
 DIST_DIR="$SCRIPT_DIR/dist"
-HELM_BINARY="$DIST_DIR/helm"
 HELM_VERSION="v3.16.4"
 CHART_CACHE="$DIST_DIR/chaos-mesh-chart.tgz"
+HELM_LINUX="$DIST_DIR/helm-linux-amd64"
 
-# --- 本地准备 helm 二进制 ---
-if [[ ! -x "$HELM_BINARY" ]]; then
-  log "  下载 helm ${HELM_VERSION} 到本地..."
-  mkdir -p "$DIST_DIR"
+# 检测本机平台，下载对应 helm 用于本地操作（repo add / pull）
+LOCAL_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+LOCAL_ARCH="$(uname -m)"
+case "$LOCAL_ARCH" in
+  x86_64)  LOCAL_ARCH="amd64" ;;
+  aarch64) LOCAL_ARCH="arm64" ;;
+  arm64)   LOCAL_ARCH="arm64" ;;
+esac
+HELM_LOCAL="$DIST_DIR/helm-${LOCAL_OS}-${LOCAL_ARCH}"
+
+mkdir -p "$DIST_DIR"
+
+if [[ ! -x "$HELM_LOCAL" ]]; then
+  log "  下载 helm ${HELM_VERSION} (${LOCAL_OS}-${LOCAL_ARCH}) 到本地..."
+  curl --http1.1 -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-${LOCAL_OS}-${LOCAL_ARCH}.tar.gz" \
+    -o "$DIST_DIR/helm-local.tar.gz"
+  tar -xzf "$DIST_DIR/helm-local.tar.gz" -C "$DIST_DIR"
+  mv "$DIST_DIR/${LOCAL_OS}-${LOCAL_ARCH}/helm" "$HELM_LOCAL"
+  chmod +x "$HELM_LOCAL"
+  rm -rf "$DIST_DIR/helm-local.tar.gz" "$DIST_DIR/${LOCAL_OS}-${LOCAL_ARCH}"
+  log "  本地 helm 就绪: $($HELM_LOCAL version --short 2>/dev/null)"
+fi
+
+# Linux helm 二进制（SCP 到服务器用）
+if [[ ! -x "$HELM_LINUX" ]]; then
+  log "  下载 helm ${HELM_VERSION} (linux-amd64) 用于服务器..."
   curl --http1.1 -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
-    -o "$DIST_DIR/helm.tar.gz"
-  tar -xzf "$DIST_DIR/helm.tar.gz" -C "$DIST_DIR"
-  mv "$DIST_DIR/linux-amd64/helm" "$HELM_BINARY"
-  chmod +x "$HELM_BINARY"
-  rm -rf "$DIST_DIR/helm.tar.gz" "$DIST_DIR/linux-amd64"
-  log "  helm 就绪: $($HELM_BINARY version --short 2>/dev/null)"
+    -o "$DIST_DIR/helm-linux.tar.gz"
+  tar -xzf "$DIST_DIR/helm-linux.tar.gz" -C "$DIST_DIR"
+  mv "$DIST_DIR/linux-amd64/helm" "$HELM_LINUX"
+  chmod +x "$HELM_LINUX"
+  rm -rf "$DIST_DIR/helm-linux.tar.gz" "$DIST_DIR/linux-amd64"
+  log "  服务器 helm 就绪"
 fi
 
 # --- 本地下载 chaos-mesh chart ---
 if [[ ! -f "$CHART_CACHE" ]]; then
   log "  下载 chaos-mesh Helm chart 到本地..."
-  $HELM_BINARY repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
-  $HELM_BINARY repo update
-  $HELM_BINARY pull chaos-mesh/chaos-mesh --destination "$DIST_DIR"
+  $HELM_LOCAL repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
+  $HELM_LOCAL repo update
+  $HELM_LOCAL pull chaos-mesh/chaos-mesh --destination "$DIST_DIR"
   # pull 下来的文件名可能是 chaos-mesh-X.Y.Z.tgz
   local_chart="$(ls -t "$DIST_DIR"/chaos-mesh-*.tgz 2>/dev/null | head -1)"
   if [[ -n "$local_chart" && "$local_chart" != "$CHART_CACHE" ]]; then
@@ -61,7 +83,7 @@ install_chaos_mesh() {
   fi
 
   # 上传 helm + chart + values
-  scp_upload "$HELM_BINARY" "$ip" "$user" "$pass_var" "$key_var" "/usr/local/bin/helm"
+  scp_upload "$HELM_LINUX" "$ip" "$user" "$pass_var" "$key_var" "/usr/local/bin/helm"
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}chmod +x /usr/local/bin/helm"
   scp_upload "$CHART_CACHE" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh.tgz"
   scp_upload "$SCRIPT_DIR/manifests/chaos-mesh/values.yaml" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh-values.yaml"

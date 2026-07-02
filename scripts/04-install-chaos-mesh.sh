@@ -1,5 +1,6 @@
 #!/bin/bash
 # 04 - 安装 Chaos Mesh（按唯一服务器并发）
+# 本地下载 helm + chart，SCP 到服务器安装，避免服务器直连外网
 
 if [[ "${SKIP_CHAOS_MESH:-false}" == "true" ]]; then
   log "SKIP_CHAOS_MESH=true, 跳过 Chaos Mesh 安装"
@@ -8,6 +9,42 @@ fi
 
 log "在服务器上安装 Chaos Mesh..."
 
+DIST_DIR="$SCRIPT_DIR/dist"
+HELM_BINARY="$DIST_DIR/helm"
+HELM_VERSION="v3.16.4"
+CHART_CACHE="$DIST_DIR/chaos-mesh-chart.tgz"
+
+# --- 本地准备 helm 二进制 ---
+if [[ ! -x "$HELM_BINARY" ]]; then
+  log "  下载 helm ${HELM_VERSION} 到本地..."
+  mkdir -p "$DIST_DIR"
+  curl --http1.1 -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+    -o "$DIST_DIR/helm.tar.gz"
+  tar -xzf "$DIST_DIR/helm.tar.gz" -C "$DIST_DIR"
+  mv "$DIST_DIR/linux-amd64/helm" "$HELM_BINARY"
+  chmod +x "$HELM_BINARY"
+  rm -rf "$DIST_DIR/helm.tar.gz" "$DIST_DIR/linux-amd64"
+  log "  helm 就绪: $($HELM_BINARY version --short 2>/dev/null)"
+fi
+
+# --- 本地下载 chaos-mesh chart ---
+if [[ ! -f "$CHART_CACHE" ]]; then
+  log "  下载 chaos-mesh Helm chart 到本地..."
+  $HELM_BINARY repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
+  $HELM_BINARY repo update
+  $HELM_BINARY pull chaos-mesh/chaos-mesh --destination "$DIST_DIR"
+  # pull 下来的文件名可能是 chaos-mesh-X.Y.Z.tgz
+  local_chart="$(ls -t "$DIST_DIR"/chaos-mesh-*.tgz 2>/dev/null | head -1)"
+  if [[ -n "$local_chart" && "$local_chart" != "$CHART_CACHE" ]]; then
+    mv "$local_chart" "$CHART_CACHE"
+  fi
+  if [[ ! -f "$CHART_CACHE" ]]; then
+    err "无法下载 chaos-mesh chart"
+    exit 1
+  fi
+  log "  chart 就绪: $CHART_CACHE"
+fi
+
 install_chaos_mesh() {
   local ip="$1" user="$2" pass_var="$3" key_var="$4" label="$5"
   local sudo_prefix
@@ -15,44 +52,36 @@ install_chaos_mesh() {
 
   log "  安装 Chaos Mesh on $label ($ip)..."
 
-  # 上传 helm values 文件
+  # 检查是否已安装
+  if ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl get ns chaos-mesh &>/dev/null" && \
+     ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl get pods -n chaos-mesh --no-headers 2>/dev/null | head -1 | grep -q ."; then
+    log "  $label Chaos Mesh 已安装"
+    ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}k3s kubectl get pods -n chaos-mesh"
+    return 0
+  fi
+
+  # 上传 helm + chart + values
+  scp_upload "$HELM_BINARY" "$ip" "$user" "$pass_var" "$key_var" "/usr/local/bin/helm"
+  ssh_exec "$ip" "$user" "$pass_var" "$key_var" "${sudo_prefix}chmod +x /usr/local/bin/helm"
+  scp_upload "$CHART_CACHE" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh.tgz"
   scp_upload "$SCRIPT_DIR/manifests/chaos-mesh/values.yaml" "$ip" "$user" "$pass_var" "$key_var" "/tmp/chaos-mesh-values.yaml"
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
-    # 检查是否已安装
-    if ${sudo_prefix}k3s kubectl get ns chaos-mesh &>/dev/null; then
-      echo 'Chaos Mesh 已安装'
-      ${sudo_prefix}k3s kubectl get pods -n chaos-mesh
-      exit 0
-    fi
+    set -e
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-    # 安装 helm（如果没有）
-    if ! command -v helm &>/dev/null; then
-      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 -o /tmp/get-helm-3.sh
-      if [[ -s /tmp/get-helm-3.sh ]]; then
-        ${sudo_prefix}bash /tmp/get-helm-3.sh
-        rm -f /tmp/get-helm-3.sh
-      else
-        echo "ERROR: Failed to download helm install script" >&2
-        # continue anyway as helm might already be installed
-      fi
-    fi
-
-    # 添加 chaos-mesh repo
-    ${sudo_prefix}helm repo add chaos-mesh https://charts.chaos-mesh.org 2>/dev/null || true
-    ${sudo_prefix}helm repo update
-
-    # 安装
-    ${sudo_prefix}helm install chaos-mesh chaos-mesh/chaos-mesh \
+    helm install chaos-mesh /tmp/chaos-mesh.tgz \
       -n chaos-mesh \
       --create-namespace \
-      --kubeconfig /etc/rancher/k3s/k3s.yaml \
       -f /tmp/chaos-mesh-values.yaml
 
-    # 等待就绪
     sleep 10
-    ${sudo_prefix}k3s kubectl wait --for=condition=Ready pods --all -n chaos-mesh --timeout=120s
+    k3s kubectl wait --for=condition=Ready pods --all -n chaos-mesh --timeout=180s
+
+    rm -f /tmp/chaos-mesh.tgz /tmp/chaos-mesh-values.yaml
   "
+
+  log "  $label Chaos Mesh 安装完成"
 }
 
 fail=0

@@ -1,5 +1,6 @@
 #!/bin/bash
-# 04 - 导入 k3s/Chaos Mesh 基础镜像（必须在安装 Chaos Mesh 前执行）
+# 04a - 导入 k3s/Chaos Mesh 基础镜像（必须在安装 Chaos Mesh 前执行）
+# 本地下载后 SCP 到服务器，避免服务器直连外网
 
 if [[ "${SKIP_BASE_IMAGE_IMPORT:-false}" == "true" ]]; then
   log "SKIP_BASE_IMAGE_IMPORT=true, 跳过基础镜像导入"
@@ -19,14 +20,37 @@ if [[ -z "$BASE_IMAGE_ARTIFACT_URL" && -z "$BASE_IMAGE_TAR_PATH" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
-if [[ -n "$BASE_IMAGE_TAR_PATH" && ! -f "$BASE_IMAGE_TAR_PATH" ]]; then
-  err "BASE_IMAGE_TAR_PATH 不存在: $BASE_IMAGE_TAR_PATH"
-  exit 1
-fi
+IMAGE_ARTIFACT_CACHE_DIR="${IMAGE_ARTIFACT_CACHE_DIR:-$SCRIPT_DIR/dist/image-artifacts-cache}"
+
+# 确保本地有基础镜像 tar
+ensure_local_base_image() {
+  if [[ -n "$BASE_IMAGE_TAR_PATH" ]]; then
+    if [[ ! -f "$BASE_IMAGE_TAR_PATH" ]]; then
+      err "BASE_IMAGE_TAR_PATH 不存在: $BASE_IMAGE_TAR_PATH"
+      exit 1
+    fi
+    return 0
+  fi
+
+  local cached="$IMAGE_ARTIFACT_CACHE_DIR/$BASE_IMAGE_BUNDLE_NAME"
+  if [[ -s "$cached" ]]; then
+    log "  本地基础镜像已缓存: $cached"
+    BASE_IMAGE_TAR_PATH="$cached"
+    return 0
+  fi
+
+  log "  本地下载基础镜像 ($(basename "$BASE_IMAGE_ARTIFACT_URL"))..."
+  mkdir -p "$IMAGE_ARTIFACT_CACHE_DIR"
+  curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
+    -o "$cached" "$BASE_IMAGE_ARTIFACT_URL"
+  BASE_IMAGE_TAR_PATH="$cached"
+  log "  基础镜像下载完成: $(du -h "$cached" | cut -f1)"
+}
+
+ensure_local_base_image
 
 log "导入 k3s/Chaos Mesh 基础镜像..."
-if [[ -n "$BASE_IMAGE_ARTIFACT_URL" ]]; then log "  基础镜像 URL: $BASE_IMAGE_ARTIFACT_URL"; fi
-if [[ -n "$BASE_IMAGE_TAR_PATH" ]]; then log "  基础镜像本地文件: $BASE_IMAGE_TAR_PATH"; fi
+log "  本地文件: $BASE_IMAGE_TAR_PATH"
 
 import_base_images_for_host() {
   local role="$1"
@@ -52,26 +76,7 @@ import_base_images_for_host() {
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "rm -rf /tmp/sre-base-images && mkdir -p /tmp/sre-base-images"
 
-  if [[ -n "$BASE_IMAGE_TAR_PATH" ]]; then
-    scp_upload "$BASE_IMAGE_TAR_PATH" "$ip" "$user" "$pass_var" "$key_var" "$remote_tar"
-  else
-    ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
-      set -e
-      cd /tmp/sre-base-images
-      if ! command -v aria2c >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-        ${sudo_prefix}apt-get update
-        ${sudo_prefix}apt-get install -y aria2 || true
-      fi
-      if command -v aria2c >/dev/null 2>&1; then
-        aria2c -x 8 -s 8 -k 1M --retry-wait=5 --max-tries=5 \
-          --connect-timeout=20 --timeout=120 \
-          -d /tmp/sre-base-images -o '$BASE_IMAGE_BUNDLE_NAME' '$BASE_IMAGE_ARTIFACT_URL'
-      else
-        curl --http1.1 -fL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 1800 \
-          -o '$remote_tar' '$BASE_IMAGE_ARTIFACT_URL'
-      fi
-    "
-  fi
+  scp_upload "$BASE_IMAGE_TAR_PATH" "$ip" "$user" "$pass_var" "$key_var" "$remote_tar"
 
   ssh_exec "$ip" "$user" "$pass_var" "$key_var" "
     set -e
